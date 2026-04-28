@@ -1,0 +1,15 @@
+[Unit]
+Description=TG Rates Bot
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/tg-rates-bot
+ExecStart=/root/tg-rates-bot/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+EnvironmentFile=/root/tg-rates-bot/.env
+
+[Install]
+WantedBy=multi-user.target
