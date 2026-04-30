@@ -11,12 +11,21 @@ from services.converter import (
     SUPPORTED_CALCULATOR_CURRENCIES,
     convert_currency as calculate_conversion,
     format_calculator_result,
+    is_supported_currency,
+    looks_like_convert_attempt,
     parse_convert_request,
 )
 from services.formatter import DEFAULT_CURRENCIES, format_rates
 
 logger = logging.getLogger(__name__)
 router = Router(name="converter")
+
+UNKNOWN_CURRENCY_TEXT = (
+    "Неизвестная валюта. Сейчас доступны: "
+    + ", ".join(SUPPORTED_CALCULATOR_CURRENCIES)
+    + "."
+)
+CONVERT_HINT_TEXT = "Напиши сумму и валюту, например: 100 usd"
 
 
 def calculator_result_keyboard() -> InlineKeyboardMarkup:
@@ -35,17 +44,14 @@ def calculator_result_keyboard() -> InlineKeyboardMarkup:
 async def show_rate_source(callback: CallbackQuery) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
-        await callback.message.answer(
-            "Источник курса: официальный курс ЦБ РФ.\n"
-            "Investing подготовлен как будущий источник live-курсов, но пока не подключён."
-        )
+        await callback.message.answer("Источник курса: официальный курс ЦБ РФ.")
 
 
 @router.callback_query(F.data == "calc:new")
 async def new_calculation(callback: CallbackQuery) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
-        await callback.message.answer("Введите сумму и валюту, например: 10000 usd")
+        await callback.message.answer(CONVERT_HINT_TEXT)
 
 
 @router.callback_query(F.data == "calc:rates")
@@ -80,6 +86,12 @@ async def convert_currency(
 
     request = parse_convert_request(message.text)
     if request is None:
+        if looks_like_convert_attempt(message.text):
+            await message.answer(CONVERT_HINT_TEXT)
+        return
+
+    if not is_supported_currency(request.code):
+        await message.answer(UNKNOWN_CURRENCY_TEXT)
         return
 
     today = datetime.now(ZoneInfo(app_config.timezone)).date()
@@ -92,10 +104,7 @@ async def convert_currency(
 
     result = calculate_conversion(request, snapshot)
     if result is None:
-        await message.answer(
-            "Поддерживаются расчёты с RUB и валютами: "
-            + ", ".join(SUPPORTED_CALCULATOR_CURRENCIES)
-        )
+        await message.answer("Курс выбранной валюты сейчас недоступен. Попробуйте чуть позже.")
         return
 
     await message.answer(

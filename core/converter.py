@@ -5,35 +5,42 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from core.models import CurrencyRate, RatesSnapshot
-from core.money import format_money, format_number, format_plain_amount, format_rate
+from core.money import format_number, format_plain_amount, format_rate
 
-SUPPORTED_CALCULATOR_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP")
-SUPPORTED_INPUT_CURRENCIES: tuple[str, ...] = ("RUB",) + SUPPORTED_CALCULATOR_CURRENCIES
+SUPPORTED_CALCULATOR_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY")
 
 _CONVERT_RE = re.compile(
     r"^\s*(?P<amount>\d+(?:[\s_]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
-    r"\s+(?P<from>[a-zA-Z]{3})(?:\s+(?P<to>[a-zA-Z]{3}))?\s*$",
+    r"\s+(?P<code>[a-zA-Z]{3})\s*$",
     re.IGNORECASE,
 )
+_CALC_ATTEMPT_RE = re.compile(r"\d|[a-zA-Z]{3}", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class ConvertRequest:
     amount: Decimal
-    from_code: str
-    to_code: str = "RUB"
+    code: str
 
     @property
-    def code(self) -> str:
-        return self.from_code
+    def from_code(self) -> str:
+        return self.code
+
+    @property
+    def to_code(self) -> str:
+        return "RUB"
 
 
 @dataclass(frozen=True)
 class ConversionResult:
     request: ConvertRequest
-    result: Decimal
+    result_rub: Decimal
     rate: CurrencyRate
     source: str = "ЦБ РФ"
+
+    @property
+    def result(self) -> Decimal:
+        return self.result_rub
 
 
 def parse_convert_request(text: str) -> ConvertRequest | None:
@@ -41,68 +48,70 @@ def parse_convert_request(text: str) -> ConvertRequest | None:
     if match is None:
         return None
 
+    amount_text = match.group("amount").replace(" ", "").replace("_", "").replace(",", ".")
     try:
-        amount = Decimal(match.group("amount").replace(" ", "").replace("_", "").replace(",", "."))
+        amount = Decimal(amount_text)
     except InvalidOperation:
         return None
 
     if amount <= 0:
         return None
 
-    from_code = match.group("from").upper()
-    to_code = (match.group("to") or "RUB").upper()
-    if from_code not in SUPPORTED_INPUT_CURRENCIES or to_code not in SUPPORTED_INPUT_CURRENCIES:
-        return None
-    if from_code == to_code:
-        return None
+    return ConvertRequest(amount=amount, code=match.group("code").upper())
 
-    return ConvertRequest(amount=amount, from_code=from_code, to_code=to_code)
+
+def looks_like_convert_attempt(text: str) -> bool:
+    text = text.strip()
+    if not text:
+        return False
+
+    has_digit = any(char.isdigit() for char in text)
+    has_currency_like_word = re.search(r"\b[a-zA-Z]{2,5}\b", text) is not None
+    return has_digit or (has_currency_like_word and bool(_CALC_ATTEMPT_RE.search(text)))
+
+
+def is_supported_currency(code: str) -> bool:
+    return code.upper() in SUPPORTED_CALCULATOR_CURRENCIES
 
 
 def convert_currency(request: ConvertRequest, snapshot: RatesSnapshot) -> ConversionResult | None:
-    if request.from_code == "RUB":
-        rate = snapshot.rates.get(request.to_code)
-        if rate is None:
-            return None
-        return ConversionResult(request=request, result=request.amount / rate.unit_rate, rate=rate)
-
-    from_rate = snapshot.rates.get(request.from_code)
-    if from_rate is None:
+    rate = snapshot.rates.get(request.code)
+    if rate is None:
         return None
 
-    if request.to_code == "RUB":
-        return ConversionResult(
-            request=request,
-            result=request.amount * from_rate.unit_rate,
-            rate=from_rate,
-        )
+    return ConversionResult(
+        request=request,
+        result_rub=request.amount * rate.unit_rate,
+        rate=rate,
+    )
 
-    to_rate = snapshot.rates.get(request.to_code)
-    if to_rate is None:
-        return None
 
-    rub_amount = request.amount * from_rate.unit_rate
-    return ConversionResult(request=request, result=rub_amount / to_rate.unit_rate, rate=from_rate)
+def format_rub(value: Decimal) -> str:
+    return f"{format_number(value, places=2)} ₽"
 
 
 def format_calculator_result(result: ConversionResult) -> str:
     request = result.request
-    source = result.source
     rate = result.rate
 
-    lines = [
-        "💱 Расчёт валюты",
-        "",
-        f"{format_plain_amount(request.amount)} {request.from_code} по курсу {source}:",
-        f"= {format_money(result.result, request.to_code)}",
-        "",
-        f"Курс: 1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
-        f"Дата курса: {rate.date.strftime('%d.%m.%Y')}",
-        f"Источник: {source}",
-        "",
-        "Сформировано через @kurs_rub_bot",
-    ]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            "💱 Расчёт валюты",
+            "",
+            f"{format_plain_amount(request.amount)} {request.code} по курсу {result.source}:",
+            f"= {format_rub(result.result_rub)}",
+            "",
+            "Курс:",
+            f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+            "",
+            "Дата курса:",
+            rate.date.strftime("%d.%m.%Y"),
+            "",
+            "—",
+            "",
+            "Сформировано через @kurs_rub_bot",
+        ]
+    )
 
 
 def format_conversion(amount: Decimal, code: str, result_rub: Decimal) -> str:
