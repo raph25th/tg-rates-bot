@@ -3,11 +3,11 @@ from __future__ import annotations
 from services.rates.base import Rate, RateSourceError
 
 INVESTING_UNAVAILABLE_MESSAGE = (
-    "📈 Курс Investing\n"
+    "📈 Рыночный курс\n"
     "\n"
-    "Live-курсы Investing скоро будут доступны.\n"
+    "Рыночные курсы временно недоступны.\n"
     "\n"
-    "Сейчас доступны расчёты по официальному курсу ЦБ РФ."
+    "Попробуйте позже или используйте курс ЦБ РФ."
 )
 
 
@@ -20,12 +20,12 @@ class InvestingRateSource:
 
     async def get_rates(self) -> dict[str, Rate]:
         raise InvestingUnavailableError(
-            "Курсы Investing временно недоступны. Скоро добавим live-источник."
+            "Рыночные курсы временно недоступны. Попробуйте позже или используйте курс ЦБ РФ."
         )
 
     async def get_rate(self, currency_code: str) -> Rate | None:
         raise InvestingUnavailableError(
-            "Курсы Investing временно недоступны. Скоро добавим live-источник."
+            "Рыночные курсы временно недоступны. Попробуйте позже или используйте курс ЦБ РФ."
         )
 
 

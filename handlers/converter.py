@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 router = Router(name="converter")
 
 CBR_SOURCE = "CBR"
-INVESTING_SOURCE = "INVESTING"
+MARKET_SOURCE = "MARKET"
+INVESTING_SOURCE = MARKET_SOURCE
 user_rate_source: dict[int, str] = {}
 
 UNKNOWN_CURRENCY_TEXT = (
@@ -32,9 +33,9 @@ UNKNOWN_CURRENCY_TEXT = (
     + "."
 )
 INVESTING_CALC_UNAVAILABLE_TEXT = (
-    "⚡ Расчёт по курсу Investing\n"
+    "💱 Расчёт по рынку\n"
     "\n"
-    "Скоро здесь будет расчёт по live-курсу Investing.\n"
+    "Рыночные курсы временно недоступны.\n"
     "\n"
     "Пока можно использовать расчёт по курсу ЦБ РФ:\n"
     "100 usd\n"
@@ -57,9 +58,13 @@ def market_rate_to_snapshot(rate: MarketRate) -> RatesSnapshot:
 
 def get_capabilities_hint() -> str:
     return (
-        "💱 Что умеет бот\n"
+        "❓ Что умеет бот\n"
         "\n"
-        "Я умею считать валюту по курсу ЦБ РФ, а также готовлю поддержку live-курсов Investing.\n"
+        "Бот умеет:\n"
+        "• считать по официальному курсу ЦБ РФ\n"
+        "• считать по рыночному курсу, если источник подключён\n"
+        "• применять процентную корректировку к курсу\n"
+        "• считать валюту в рубли и рубли в валюту\n"
         "\n"
         "Примеры:\n"
         "\n"
@@ -150,7 +155,7 @@ async def choose_investing_calculation(message: Message, market_rate_provider) -
 
     _set_user_source(message, INVESTING_SOURCE)
     await message.answer(
-        "💱 Расчёт по Investing\n\n"
+        "💱 Расчёт по рынку\n\n"
         "Напишите сумму и валюту:\n\n"
         "100 usd\n"
         "10 000 usd +2%\n"
@@ -194,7 +199,7 @@ async def convert_currency(
 
     active_source = _get_user_source(message)
 
-    if active_source == INVESTING_SOURCE:
+    if active_source == MARKET_SOURCE:
         rate_code = request.to_code if request.direction == "rub_to_currency" else request.from_code
         try:
             market_rate = await market_rate_provider.get_rate(rate_code)
@@ -206,9 +211,9 @@ async def convert_currency(
             await message.answer(str(exc))
             return
 
-        result = calculate_conversion(request, market_rate_to_snapshot(market_rate), source="Investing")
+        result = calculate_conversion(request, market_rate_to_snapshot(market_rate), source=market_rate.source)
         if result is None:
-            await message.answer(f"Пара {rate_code}/RUB временно недоступна в Investing.")
+            await message.answer(f"Пара {rate_code}/RUB временно недоступна в рыночном источнике.")
             return
 
         await message.answer(

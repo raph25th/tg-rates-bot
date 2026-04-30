@@ -65,8 +65,8 @@ class Settings:
     def validate(self) -> None:
         parse_daily_time(self.default_daily_time)
         ZoneInfo(self.timezone)
-        allowed_providers = {"", "disabled", "mock", "investing_rapidapi", "investing_apify", "investing_scraper"}
+        allowed_providers = {"", "disabled", "mock", "yahoo", "investing_rapidapi", "investing_apify", "investing_scraper"}
         if self.market_rate_provider not in allowed_providers:
-            raise ValueError("MARKET_RATE_PROVIDER must be disabled, mock, investing_rapidapi, investing_apify or investing_scraper")
+            raise ValueError("MARKET_RATE_PROVIDER must be disabled, mock, yahoo, investing_rapidapi, investing_apify or investing_scraper")
         if self.investing_provider_mode not in allowed_providers:
-            raise ValueError("INVESTING_PROVIDER_MODE must be disabled, mock, investing_rapidapi, investing_apify or investing_scraper")
+            raise ValueError("INVESTING_PROVIDER_MODE must be disabled, mock, yahoo, investing_rapidapi, investing_apify or investing_scraper")

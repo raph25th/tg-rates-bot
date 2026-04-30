@@ -26,6 +26,9 @@ def test_main_menu_contains_five_buttons() -> None:
         INVESTING_CALC_BUTTON,
         CAPABILITIES_BUTTON,
     ]
+    assert INVESTING_RATES_BUTTON == "📈 Рыночный курс"
+    assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
+    assert all("Investing" not in text for text in texts)
 
 
 def test_cbr_rates_menu_contains_date_actions() -> None:
@@ -68,6 +71,6 @@ def test_format_cbr_rates_button_output() -> None:
 def test_investing_rates_unavailable_message() -> None:
     message = get_investing_unavailable_message()
 
-    assert "📈 Курс Investing" in message
-    assert "Live-курсы Investing скоро будут доступны." in message
-    assert "Сейчас доступны расчёты по официальному курсу ЦБ РФ." in message
+    assert "📈 Рыночный курс" in message
+    assert "Рыночные курсы временно недоступны." in message
+    assert "Попробуйте позже или используйте курс ЦБ РФ." in message

@@ -5,7 +5,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from config import Settings
-from services.rates.market.base import MARKET_RATE_ORDER, MarketRate, PairUnavailableError, pair_for_code
+from services.rates.market.base import MARKET_RATE_ORDER, MOCK_MARKET_SOURCE, MarketRate, PairUnavailableError, pair_for_code
 
 MOCK_MARKET_RATES: dict[str, Decimal] = {
     "USD": Decimal("75.1200"),
@@ -20,7 +20,7 @@ MOCK_MARKET_RATES: dict[str, Decimal] = {
 
 
 class MockMarketRateProvider:
-    source = "Investing"
+    source = MOCK_MARKET_SOURCE
 
     def __init__(self, app_config: Settings) -> None:
         self.app_config = app_config

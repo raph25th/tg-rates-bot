@@ -7,7 +7,14 @@ from typing import Protocol
 
 MARKET_RATE_ORDER: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP", "AED", "THB", "KRW", "JPY")
 SUPPORTED_MARKET_PAIRS: dict[str, str] = {code: f"{code}/RUB" for code in MARKET_RATE_ORDER}
-INVESTING_UNAVAILABLE_TEXT = "Курсы Investing временно недоступны. Проверьте настройки источника."
+MARKET_UNAVAILABLE_TEXT = "Рыночные курсы временно недоступны.\nПопробуйте позже или используйте курс ЦБ РФ."
+INVESTING_UNAVAILABLE_TEXT = MARKET_UNAVAILABLE_TEXT
+YAHOO_MARKET_SOURCE = "Yahoo Finance / рыночный ориентир"
+MOCK_MARKET_SOURCE = "Mock Market / тестовый режим"
+MOCK_MARKET_WARNING = (
+    "⚠️ Тестовый режим\n"
+    "Это не реальные рыночные курсы. Данные используются для проверки интерфейса."
+)
 
 
 @dataclass(frozen=True)
@@ -20,9 +27,9 @@ class MarketRate:
 
 
 class MarketRateProviderError(RuntimeError):
-    user_message = INVESTING_UNAVAILABLE_TEXT
+    user_message = MARKET_UNAVAILABLE_TEXT
 
-    def __init__(self, message: str = INVESTING_UNAVAILABLE_TEXT) -> None:
+    def __init__(self, message: str = MARKET_UNAVAILABLE_TEXT) -> None:
         super().__init__(message)
         self.user_message = message
 
@@ -30,7 +37,7 @@ class MarketRateProviderError(RuntimeError):
 class PairUnavailableError(MarketRateProviderError):
     def __init__(self, pair: str) -> None:
         self.pair = pair
-        super().__init__(f"Пара {pair} временно недоступна в Investing.")
+        super().__init__(f"Пара {pair} временно недоступна в рыночном источнике.")
 
 
 class MarketRateProvider(Protocol):

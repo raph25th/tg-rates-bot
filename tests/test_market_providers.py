@@ -7,10 +7,12 @@ from config import Settings
 from handlers.converter import market_rate_to_snapshot
 from services.converter import convert_currency, parse_convert_request
 from services.rates.market import MARKET_RATE_ORDER, MarketRateProviderError, build_market_rate_provider
-from services.rates.market.base import INVESTING_UNAVAILABLE_TEXT
+from services.rates.market.base import MARKET_UNAVAILABLE_TEXT, MOCK_MARKET_SOURCE, MOCK_MARKET_WARNING, YAHOO_MARKET_SOURCE
 from services.rates.market.cache import CachedMarketRateProvider
+from services.rates.market.formatter import format_market_rates
 from services.rates.market.investing_rapidapi import InvestingRapidApiProvider
 from services.rates.market.mock import MockMarketRateProvider
+from services.rates.market.yahoo import YahooMarketRateProvider, _extract_chart_price
 
 
 def make_settings(**kwargs) -> Settings:
@@ -27,7 +29,25 @@ async def test_mock_provider_returns_market_rates() -> None:
 
     assert rates["USD"].pair == "USD/RUB"
     assert rates["USD"].value == Decimal("75.1200")
-    assert rates["USD"].source == "Investing"
+    assert rates["USD"].source == MOCK_MARKET_SOURCE
+
+
+def test_factory_selects_yahoo_provider() -> None:
+    provider = build_market_rate_provider(make_settings(market_rate_provider="yahoo"))
+
+    assert provider.source == YAHOO_MARKET_SOURCE
+
+
+@pytest.mark.asyncio
+async def test_mock_rates_are_marked_as_test_mode() -> None:
+    provider = build_market_rate_provider(make_settings(market_rate_provider="mock"))
+
+    rates = await provider.get_rates(["USD"])
+    message = format_market_rates(rates, ("USD",))
+
+    assert "📈 Рыночный курс" in message
+    assert f"Источник: {MOCK_MARKET_SOURCE}" in message
+    assert MOCK_MARKET_WARNING in message
 
 
 @pytest.mark.asyncio
@@ -37,7 +57,7 @@ async def test_disabled_provider_shows_safe_error() -> None:
     with pytest.raises(MarketRateProviderError) as exc:
         await provider.get_rate("USD")
 
-    assert str(exc.value) == INVESTING_UNAVAILABLE_TEXT
+    assert str(exc.value) == MARKET_UNAVAILABLE_TEXT
 
 
 @pytest.mark.asyncio
@@ -47,7 +67,7 @@ async def test_rapidapi_without_key_does_not_crash() -> None:
     with pytest.raises(MarketRateProviderError) as exc:
         await provider.get_rate("USD")
 
-    assert str(exc.value) == INVESTING_UNAVAILABLE_TEXT
+    assert str(exc.value) == MARKET_UNAVAILABLE_TEXT
 
 
 @pytest.mark.asyncio
@@ -81,3 +101,42 @@ def test_conversion_with_market_snapshot_uses_market_value() -> None:
     assert result.rate.unit_rate == Decimal("80.0000")
     assert result.result == Decimal("8000.0000")
     assert result.source == "Investing"
+
+
+def test_mock_conversion_can_show_mock_source() -> None:
+    request = parse_convert_request("100 usd")
+    assert request is not None
+    from services.rates.market.base import MarketRate
+
+    market_rate = MarketRate(
+        code="USD",
+        pair="USD/RUB",
+        value=Decimal("80.0000"),
+        source=MOCK_MARKET_SOURCE,
+        fetched_at=datetime(2026, 4, 30, 14, 35),
+    )
+
+    result = convert_currency(request, market_rate_to_snapshot(market_rate), source=market_rate.source)
+
+    assert result is not None
+    assert result.source == MOCK_MARKET_SOURCE
+
+
+@pytest.mark.asyncio
+async def test_unavailable_yahoo_does_not_crash() -> None:
+    class EmptyYahooProvider(YahooMarketRateProvider):
+        async def _get_value(self, code: str):
+            return None
+
+    provider = EmptyYahooProvider(make_settings(market_rate_provider="yahoo"))
+
+    with pytest.raises(MarketRateProviderError) as exc:
+        await provider.get_rates(["USD"])
+
+    assert str(exc.value) == MARKET_UNAVAILABLE_TEXT
+
+
+def test_yahoo_chart_price_parser() -> None:
+    payload = {"chart": {"result": [{"meta": {"regularMarketPrice": 92.5}}]}}
+
+    assert _extract_chart_price(payload) == Decimal("92.5")

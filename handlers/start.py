@@ -8,9 +8,9 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 CBR_RATES_BUTTON = "📊 Курс ЦБ РФ"
-INVESTING_RATES_BUTTON = "📈 Курс Investing"
+INVESTING_RATES_BUTTON = "📈 Рыночный курс"
 CBR_CALC_BUTTON = "🧮 Расчёт по ЦБ РФ"
-INVESTING_CALC_BUTTON = "💱 Расчёт по Investing"
+INVESTING_CALC_BUTTON = "💱 Расчёт по рынку"
 CAPABILITIES_BUTTON = "❓ Что умеет бот"
 
 

@@ -9,7 +9,11 @@ from handlers.converter import (
 def test_capabilities_hint_covers_supported_examples() -> None:
     hint = get_capabilities_hint()
 
-    assert "💱 Что умеет бот" in hint
+    assert "❓ Что умеет бот" in hint
+    assert "• считать по официальному курсу ЦБ РФ" in hint
+    assert "• считать по рыночному курсу, если источник подключён" in hint
+    assert "• применять процентную корректировку к курсу" in hint
+    assert "• считать валюту в рубли и рубли в валюту" in hint
     assert "• 100 usd" in hint
     assert "• 10 000 aed +2%" in hint
     assert "• 1 000 000 rub в usd" in hint
@@ -40,6 +44,6 @@ def test_calculator_result_keyboard_has_only_new_calc_and_main_menu() -> None:
 
 
 def test_investing_calculation_unavailable_message() -> None:
-    assert "⚡ Расчёт по курсу Investing" in INVESTING_CALC_UNAVAILABLE_TEXT
-    assert "Скоро здесь будет расчёт по live-курсу Investing." in INVESTING_CALC_UNAVAILABLE_TEXT
+    assert "💱 Расчёт по рынку" in INVESTING_CALC_UNAVAILABLE_TEXT
+    assert "Рыночные курсы временно недоступны." in INVESTING_CALC_UNAVAILABLE_TEXT
     assert "100 usd" in INVESTING_CALC_UNAVAILABLE_TEXT

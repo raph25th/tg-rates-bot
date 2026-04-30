@@ -5,60 +5,18 @@
 - `@kurs_rub_bot` — пользовательский калькулятор валют.
 - `@rub_rates_bot` — профессиональный мониторинг курсов и ежедневные уведомления.
 
-Сейчас реализуется основа для `@kurs_rub_bot`, а общая бизнес-логика вынесена в `core`.
+Сейчас реализуется основа для `@kurs_rub_bot`.
 
-## Что Уже Есть
+## Возможности
 
-- Python, aiogram 3, SQLite, APScheduler
-- официальный источник ЦБ РФ: `https://www.cbr.ru/scripts/XML_daily.asp?date_req=DD/MM/YYYY`
-- нормализация курсов: `code`, `name`, `nominal`, `value`, `unit_rate`, `date`
-- валютный калькулятор по курсу ЦБ РФ
-- форматирование денежных сумм с разделителями тысяч
-- заготовка `core/live_rates.py` под будущий источник Investing
-- настройки пользователя и выбор валют
-- ежедневная отправка курсов для режима `daily`
-
-## Архитектура
-
-- `core/cbr.py` — получение и парсинг курсов ЦБ РФ
-- `core/models.py` — общие модели курсов
-- `core/converter.py` — парсинг пользовательского ввода и расчёт валют
-- `core/money.py` — форматирование сумм, курсов и символов валют
-- `core/live_rates.py` — интерфейс будущих live-курсов Investing
-- `handlers/` — Telegram-сценарии
-- `services/` — совместимые сервисные обёртки поверх `core`
-- `db/` — SQLite-модели и репозиторий
-
-## Сценарий `@kurs_rub_bot`
-
-Пользователь вводит:
-
-```text
-10000 usd
-100000 eur
-1 000 000 rub usd
-```
-
-Бот распознаёт сумму и валюты, берёт текущий курс ЦБ РФ и отвечает сообщением, готовым к пересылке клиенту:
-
-```text
-💱 Расчёт валюты
-
-10 000 USD по курсу ЦБ РФ:
-= 755 273 ₽
-
-Курс: 1 USD = 75,5273 ₽
-Дата курса: 25.04.2026
-Источник: ЦБ РФ
-
-Сформировано через @kurs_rub_bot
-```
-
-После результата бот показывает inline-кнопки:
-
-- `📊 Курсы сейчас`
-- `⚙️ Источник курса`
-- `🔁 Новый расчёт`
+- Python, aiogram 3, SQLite, APScheduler.
+- Официальные курсы ЦБ РФ через `https://www.cbr.ru/scripts/XML_daily.asp?date_req=DD/MM/YYYY`.
+- Валютный калькулятор: валюта → рубли и рубли → валюта.
+- Процентная корректировка к курсу.
+- Поддержка USD, EUR, CNY, GBP, AED, THB, KRW, JPY.
+- Рыночный provider-слой для Yahoo Finance, mock-режима и будущих источников.
+- Кэширование market-курсов на 60 секунд.
+- systemd-ready деплой на VPS.
 
 ## Установка
 
@@ -70,13 +28,15 @@ pip install -r requirements.txt
 
 ## Настройка
 
-Создайте `.env` на основе `.env.example` и укажите токен BotFather:
+Создайте `.env` на основе `.env.example`:
 
 ```env
 BOT_TOKEN=123456:your-token
 DATABASE_URL=sqlite:///bot.db
 DEFAULT_DAILY_TIME=18:10
 TIMEZONE=Europe/Moscow
+MARKET_RATE_PROVIDER=yahoo
+INVESTING_PROVIDER_MODE=disabled
 ```
 
 ## Запуск
@@ -85,62 +45,88 @@ TIMEZONE=Europe/Moscow
 python main.py
 ```
 
-Для быстрой проверки токена и доступа к Telegram API:
+Проверка токена и доступа к Telegram API:
 
 ```powershell
 python main.py --health-check
 ```
 
-При старте бот пишет в консоль диагностические строки:
+## Рыночный курс
 
-```text
-Routers included
-Bot started
-get_me ok: @your_bot
-Polling started
+Рыночный курс используется как ориентир для предварительных расчётов. На первом этапе источник — Yahoo Finance. Значения могут немного отличаться от Investing и других площадок, так как live-курсы обновляются в течение дня.
+
+Основной режим:
+
+```env
+MARKET_RATE_PROVIDER=yahoo
 ```
 
-Если `api.telegram.org` недоступен, приложение не падает, а пишет понятную ошибку `get_me failed` или `Polling failed` и повторяет попытку.
+Источник в сообщениях бота:
+
+```text
+Yahoo Finance / рыночный ориентир
+```
+
+Если Yahoo Finance временно недоступен, бот не падает и показывает:
+
+```text
+Рыночные курсы временно недоступны.
+Попробуйте позже или используйте курс ЦБ РФ.
+```
+
+Для проверки интерфейса без внешнего источника:
+
+```env
+MARKET_RATE_PROVIDER=mock
+```
+
+В mock-режиме бот явно показывает, что данные тестовые:
+
+```text
+Источник: Mock Market / тестовый режим
+
+⚠️ Тестовый режим
+Это не реальные рыночные курсы. Данные используются для проверки интерфейса.
+```
+
+Поддерживаемые Yahoo Finance тикеры:
+
+```text
+USD/RUB: RUB=X
+EUR/RUB: EURRUB=X
+CNY/RUB: CNYRUB=X
+GBP/RUB: GBPRUB=X
+AED/RUB: AEDRUB=X
+THB/RUB: THBRUB=X
+KRW/RUB: KRWRUB=X
+JPY/RUB: JPYRUB=X
+```
+
+Если прямой тикер недоступен, provider для части валют использует fallback через USD:
+
+```text
+JPY/RUB = RUB=X / JPY=X
+THB/RUB = RUB=X / THB=X
+CNY/RUB = RUB=X / CNY=X
+```
 
 ## Деплой на VPS
 
-Для продакшен-запуска используйте Ubuntu VPS и systemd. Подробная инструкция лежит в [`deploy/README_DEPLOY.md`](deploy/README_DEPLOY.md), пример unit-файла — в [`deploy/systemd/tg-rates-bot.service.example`](deploy/systemd/tg-rates-bot.service.example), пример production env — в [`.env.production.example`](.env.production.example).
+Подробная инструкция лежит в [`deploy/README_DEPLOY.md`](deploy/README_DEPLOY.md), пример systemd unit — в [`deploy/systemd/tg-rates-bot.service.example`](deploy/systemd/tg-rates-bot.service.example).
 
-На локальной Windows-машине, особенно при VPN или нестабильном маршруте, `aiogram/aiohttp` может получать ошибки вида `ClientConnectorError: Cannot connect to host api.telegram.org:443 ssl:default [Превышен таймаут семафора]`. Это не проблема роутеров бота: для проверки используйте `python main.py --health-check`, а для стабильной работы выносите процесс на VPS с прямым исходящим HTTPS-доступом к `api.telegram.org:443`.
+После обновления на сервере:
+
+```bash
+cd /root/tg-rates-bot
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py --health-check
+systemctl restart tg-rates-bot
+journalctl -u tg-rates-bot -f
+```
 
 ## Тесты
 
 ```powershell
-pytest
+python -m pytest
 ```
-
-## Как подключить Investing.com
-
-У Investing.com нет официального публичного API, поэтому live-курсы вынесены в отдельный market-provider слой. Бот не хардкодит Investing в handlers: источник можно заменить без переписывания сценариев.
-
-Поддерживаемые режимы:
-
-- `disabled` — live-курсы выключены, бот показывает понятную ошибку.
-- `mock` — тестовый provider с фиксированными курсами, удобно для проверки интерфейса.
-- `investing_rapidapi` — каркас под RapidAPI-провайдера Investing.
-- `investing_apify` — каркас под Apify actor/task.
-- `investing_scraper` — каркас под прямой scraper, пока без реального парсинга.
-
-Переменные окружения:
-
-```env
-MARKET_RATE_PROVIDER=mock
-INVESTING_PROVIDER_MODE=mock
-INVESTING_RAPIDAPI_KEY=
-INVESTING_APIFY_TOKEN=
-```
-
-Для production по умолчанию оставляйте `disabled`, пока не выбран конкретный поставщик данных. Если ключ RapidAPI или Apify не задан, бот не падает и отвечает: `Курсы Investing временно недоступны. Проверьте настройки источника.`
-
-Поддерживаемые пары:
-
-```text
-USD/RUB, EUR/RUB, CNY/RUB, GBP/RUB, AED/RUB, THB/RUB, KRW/RUB, JPY/RUB
-```
-
-Live-курсы кэшируются на 60 секунд, чтобы не дергать внешний источник при каждом клике.

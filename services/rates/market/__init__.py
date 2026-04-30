@@ -1,6 +1,8 @@
 from services.rates.market.base import (
     INVESTING_UNAVAILABLE_TEXT,
     MARKET_RATE_ORDER,
+    MARKET_UNAVAILABLE_TEXT,
+    YAHOO_MARKET_SOURCE,
     MarketRate,
     MarketRateProvider,
     MarketRateProviderError,
@@ -11,6 +13,8 @@ from services.rates.market.factory import build_market_rate_provider
 __all__ = [
     "INVESTING_UNAVAILABLE_TEXT",
     "MARKET_RATE_ORDER",
+    "MARKET_UNAVAILABLE_TEXT",
+    "YAHOO_MARKET_SOURCE",
     "MarketRate",
     "MarketRateProvider",
     "MarketRateProviderError",
