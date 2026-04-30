@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_plain_amount, format_rate
-
-SUPPORTED_CALCULATOR_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY")
-RUB_CODE = "RUB"
-
-_CONVERT_RE = re.compile(
-    r"^\s*(?P<amount>\d+(?:[\s_]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
-    r"\s+(?P<from>[a-zA-Z]{3})(?:\s+(?P<to>[a-zA-Z]{3}))?"
-    r"(?:\s+(?P<percent>[+-]?\d+(?:[.,]\d+)?)%)?\s*$",
-    re.IGNORECASE,
+from services.conversion_parser import (
+    RUB_CODE,
+    SUPPORTED_CURRENCIES,
+    ConversionRequest,
+    is_supported_conversion_request,
+    is_supported_currency,
+    looks_like_convert_attempt,
+    parse_conversion_request,
 )
+
+SUPPORTED_CALCULATOR_CURRENCIES = SUPPORTED_CURRENCIES
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class ConvertRequest:
     from_code: str
     to_code: str = RUB_CODE
     percent: Decimal | None = None
+    direction: str = "currency_to_rub"
 
     @property
     def code(self) -> str:
@@ -31,7 +32,7 @@ class ConvertRequest:
 
     @property
     def is_reverse(self) -> bool:
-        return self.from_code == RUB_CODE
+        return self.direction == "rub_to_currency"
 
 
 @dataclass(frozen=True)
@@ -48,64 +49,32 @@ class ConversionResult:
 
 
 def parse_convert_request(text: str) -> ConvertRequest | None:
-    match = _CONVERT_RE.match(text)
-    if match is None:
+    parsed = parse_conversion_request(text)
+    if parsed is None:
         return None
+    return convert_parser_request(parsed)
 
-    amount_text = match.group("amount").replace(" ", "").replace("_", "").replace(",", ".")
-    try:
-        amount = Decimal(amount_text)
-    except InvalidOperation:
-        return None
 
-    if amount <= 0:
-        return None
-
-    percent = parse_percent(match.group("percent"))
-    if match.group("percent") is not None and percent is None:
-        return None
-
-    from_code = match.group("from").upper()
-    to_code = (match.group("to") or RUB_CODE).upper()
-    if from_code == to_code:
-        return None
-
+def convert_parser_request(request: ConversionRequest) -> ConvertRequest:
     return ConvertRequest(
-        amount=amount,
-        from_code=from_code,
-        to_code=to_code,
-        percent=percent,
+        amount=request.amount,
+        from_code=request.from_currency,
+        to_code=request.to_currency,
+        percent=request.percent_adjustment,
+        direction=request.direction,
     )
 
 
-def parse_percent(value: str | None) -> Decimal | None:
-    if value is None:
-        return None
-    try:
-        return Decimal(value.replace(",", "."))
-    except InvalidOperation:
-        return None
-
-
-def looks_like_convert_attempt(text: str) -> bool:
-    text = text.strip()
-    if not text:
-        return False
-
-    if any(char.isdigit() for char in text):
-        return True
-
-    return re.search(r"\b[a-zA-Z]{3}\b", text) is not None
-
-
-def is_supported_currency(code: str) -> bool:
-    return code.upper() in SUPPORTED_CALCULATOR_CURRENCIES
-
-
 def is_supported_request(request: ConvertRequest) -> bool:
-    if request.from_code == RUB_CODE:
-        return is_supported_currency(request.to_code)
-    return request.to_code == RUB_CODE and is_supported_currency(request.from_code)
+    return is_supported_conversion_request(
+        ConversionRequest(
+            amount=request.amount,
+            from_currency=request.from_code,
+            to_currency=request.to_code,
+            percent_adjustment=request.percent,
+            direction=request.direction,
+        )
+    )
 
 
 def apply_percent(unit_rate: Decimal, percent: Decimal | None) -> Decimal:
@@ -114,8 +83,12 @@ def apply_percent(unit_rate: Decimal, percent: Decimal | None) -> Decimal:
     return unit_rate * (Decimal("1") + percent / Decimal("100"))
 
 
-def convert_currency(request: ConvertRequest, snapshot: RatesSnapshot) -> ConversionResult | None:
-    if request.from_code == RUB_CODE:
+def convert_currency(
+    request: ConvertRequest,
+    snapshot: RatesSnapshot,
+    source: str = "ЦБ РФ",
+) -> ConversionResult | None:
+    if request.direction == "rub_to_currency":
         rate = snapshot.rates.get(request.to_code)
         if rate is None:
             return None
@@ -125,6 +98,7 @@ def convert_currency(request: ConvertRequest, snapshot: RatesSnapshot) -> Conver
             result=request.amount / adjusted_rate,
             rate=rate,
             adjusted_unit_rate=adjusted_rate,
+            source=source,
         )
 
     rate = snapshot.rates.get(request.from_code)
@@ -137,6 +111,7 @@ def convert_currency(request: ConvertRequest, snapshot: RatesSnapshot) -> Conver
         result=request.amount * adjusted_rate,
         rate=rate,
         adjusted_unit_rate=adjusted_rate,
+        source=source,
     )
 
 
@@ -168,10 +143,13 @@ def format_calculator_result(result: ConversionResult) -> str:
     lines = [
         "💱 Расчёт валюты",
         "",
+        "Источник:",
+        result.source,
+        "",
         "Сумма:",
         format_input_amount(request),
         "",
-        "Курс ЦБ РФ:",
+        "Курс:",
         f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
     ]
 
@@ -179,7 +157,7 @@ def format_calculator_result(result: ConversionResult) -> str:
         lines.extend(
             [
                 "",
-                "Корректировка:",
+                "Корректировка к курсу:",
                 format_percent(request.percent),
                 "",
                 "Расчётный курс:",
@@ -187,10 +165,11 @@ def format_calculator_result(result: ConversionResult) -> str:
             ]
         )
 
+    total_title = "Итого к оплате:" if request.direction == "currency_to_rub" else "Итого:"
     lines.extend(
         [
             "",
-            "Итого:",
+            total_title,
             format_currency_amount(result.result, request.to_code),
             "",
             "Дата курса:",

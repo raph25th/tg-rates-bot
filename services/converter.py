@@ -10,6 +10,7 @@ from core.converter import (
     looks_like_convert_attempt,
     parse_convert_request,
 )
+from services.conversion_parser import ConversionRequest, parse_conversion_request
 
 SUPPORTED_CONVERTER_CURRENCIES = SUPPORTED_CALCULATOR_CURRENCIES
 
@@ -18,6 +19,7 @@ __all__ = [
     "SUPPORTED_CONVERTER_CURRENCIES",
     "ConvertRequest",
     "ConversionResult",
+    "ConversionRequest",
     "convert_currency",
     "format_calculator_result",
     "format_conversion",
@@ -25,4 +27,5 @@ __all__ = [
     "is_supported_request",
     "looks_like_convert_attempt",
     "parse_convert_request",
+    "parse_conversion_request",
 ]

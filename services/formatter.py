@@ -5,16 +5,16 @@ from typing import Iterable, Sequence
 
 from services.cbr import RatesSnapshot
 
-DEFAULT_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP")
+DEFAULT_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP", "AED", "THB", "KRW", "JPY")
 SUPPORTED_CURRENCIES: tuple[str, ...] = (
     "USD",
     "EUR",
     "CNY",
     "GBP",
     "AED",
-    "JPY",
-    "KRW",
     "THB",
+    "KRW",
+    "JPY",
 )
 
 
