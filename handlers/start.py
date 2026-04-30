@@ -9,8 +9,8 @@ router = Router()
 
 CBR_RATES_BUTTON = "📊 Курс ЦБ РФ"
 INVESTING_RATES_BUTTON = "📈 Курс Investing"
-CBR_CALC_BUTTON = "🧮 Расчёт по курсу ЦБ РФ"
-INVESTING_CALC_BUTTON = "⚡ Расчёт по курсу Investing"
+CBR_CALC_BUTTON = "🧮 Расчёт по ЦБ РФ"
+INVESTING_CALC_BUTTON = "💱 Расчёт по Investing"
 CAPABILITIES_BUTTON = "❓ Что умеет бот"
 
 
@@ -41,7 +41,7 @@ async def start_handler(message: Message) -> None:
 @router.message(F.text == CBR_CALC_BUTTON)
 async def cbr_converter_hint(message: Message) -> None:
     await message.answer(
-        "🧮 Расчёт по курсу ЦБ РФ\n\n"
+        "🧮 Расчёт по ЦБ РФ\n\n"
         "Напишите сумму и валюту:\n\n"
         "100 usd\n"
         "10 000 eur +2%\n"

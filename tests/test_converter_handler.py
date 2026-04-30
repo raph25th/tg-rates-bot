@@ -1,5 +1,6 @@
 from handlers.converter import (
     INVESTING_CALC_UNAVAILABLE_TEXT,
+    calculator_result_keyboard,
     get_capabilities_hint,
     get_new_calculation_hint,
 )
@@ -24,7 +25,18 @@ def test_new_calculation_hint_is_short() -> None:
     assert "100 usd" in hint
     assert "10 000 usd +2%" in hint
     assert "1 000 000 rub в usd" in hint
+    assert "Больше возможностей — в разделе:" in hint
     assert "❓ Что умеет бот" in hint
+
+
+def test_calculator_result_keyboard_has_only_new_calc_and_main_menu() -> None:
+    keyboard = calculator_result_keyboard()
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+
+    assert [(button.text, button.callback_data) for button in buttons] == [
+        ("🔁 Новый расчёт", "calc:new"),
+        ("🏠 Главное меню", "main_menu"),
+    ]
 
 
 def test_investing_calculation_unavailable_message() -> None:

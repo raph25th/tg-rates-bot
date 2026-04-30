@@ -10,6 +10,7 @@ from db.repo import UserRepository
 from handlers import converter, rates, settings as settings_handlers
 from handlers.start import router as start_router
 from services.cbr import CBRService
+from services.rates.market import build_market_rate_provider
 from services.scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ async def start_polling_safely(
     repo: UserRepository,
     cbr_service: CBRService,
     app_config: Settings,
+    market_rate_provider,
 ) -> None:
     while True:
         try:
@@ -100,6 +102,7 @@ async def start_polling_safely(
                 repo=repo,
                 cbr_service=cbr_service,
                 app_config=app_config,
+                market_rate_provider=market_rate_provider,
             )
             return
         except TelegramNetworkError as exc:
@@ -192,6 +195,7 @@ async def run() -> None:
     print("Routers included", flush=True)
 
     cbr_service = CBRService()
+    market_rate_provider = build_market_rate_provider(app_config)
     scheduler = setup_scheduler(
         bot=bot,
         repo=repo,
@@ -210,6 +214,7 @@ async def run() -> None:
             repo=repo,
             cbr_service=cbr_service,
             app_config=app_config,
+            market_rate_provider=market_rate_provider,
         )
     finally:
         scheduler.shutdown(wait=False)

@@ -9,6 +9,7 @@ from handlers.start import (
     INVESTING_RATES_BUTTON,
     main_menu_keyboard,
 )
+from handlers.rates import cbr_after_rates_keyboard, cbr_rates_menu_keyboard
 from services.rates.base import Rate
 from services.rates.formatter import format_cbr_rates
 from services.rates.investing import get_investing_unavailable_message
@@ -25,6 +26,24 @@ def test_main_menu_contains_five_buttons() -> None:
         INVESTING_CALC_BUTTON,
         CAPABILITIES_BUTTON,
     ]
+
+
+def test_cbr_rates_menu_contains_date_actions() -> None:
+    keyboard = cbr_rates_menu_keyboard()
+    texts = [button.text for row in keyboard.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert texts == ["📅 Сегодня", "🗓 Выбрать дату", "🏠 Главное меню"]
+    assert callbacks == ["cbr:today", "cbr:choose_date", "main_menu"]
+
+
+def test_cbr_after_rates_keyboard_contains_repeat_and_menu() -> None:
+    keyboard = cbr_after_rates_keyboard()
+    texts = [button.text for row in keyboard.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert texts == ["🗓 Выбрать другую дату", "🏠 Главное меню"]
+    assert callbacks == ["cbr:choose_date", "main_menu"]
 
 
 def test_format_cbr_rates_button_output() -> None:

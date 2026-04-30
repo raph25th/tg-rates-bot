@@ -19,20 +19,24 @@ class CBRRateSource:
         timezone = ZoneInfo(self.app_config.timezone)
         fetched_at = datetime.now(timezone)
         snapshot = await self.cbr_service.fetch_rates(fetched_at.date())
-        return {
-            code: Rate(
-                code=rate.code,
-                name=rate.name,
-                nominal=rate.nominal,
-                value=rate.value,
-                unit_rate=rate.unit_rate,
-                date=rate.date,
-                source=self.source,
-                fetched_at=fetched_at,
-            )
-            for code, rate in snapshot.rates.items()
-        }
+        return rates_from_snapshot(snapshot, fetched_at=fetched_at, source=self.source)
 
     async def get_rate(self, currency_code: str) -> Rate | None:
         rates = await self.get_rates()
         return rates.get(currency_code.upper())
+
+
+def rates_from_snapshot(snapshot, *, fetched_at: datetime, source: str = "CBR") -> dict[str, Rate]:
+    return {
+        code: Rate(
+            code=rate.code,
+            name=rate.name,
+            nominal=rate.nominal,
+            value=rate.value,
+            unit_rate=rate.unit_rate,
+            date=rate.date,
+            source=source,
+            fetched_at=fetched_at,
+        )
+        for code, rate in snapshot.rates.items()
+    }

@@ -113,3 +113,34 @@ Polling started
 ```powershell
 pytest
 ```
+
+## Как подключить Investing.com
+
+У Investing.com нет официального публичного API, поэтому live-курсы вынесены в отдельный market-provider слой. Бот не хардкодит Investing в handlers: источник можно заменить без переписывания сценариев.
+
+Поддерживаемые режимы:
+
+- `disabled` — live-курсы выключены, бот показывает понятную ошибку.
+- `mock` — тестовый provider с фиксированными курсами, удобно для проверки интерфейса.
+- `investing_rapidapi` — каркас под RapidAPI-провайдера Investing.
+- `investing_apify` — каркас под Apify actor/task.
+- `investing_scraper` — каркас под прямой scraper, пока без реального парсинга.
+
+Переменные окружения:
+
+```env
+MARKET_RATE_PROVIDER=mock
+INVESTING_PROVIDER_MODE=mock
+INVESTING_RAPIDAPI_KEY=
+INVESTING_APIFY_TOKEN=
+```
+
+Для production по умолчанию оставляйте `disabled`, пока не выбран конкретный поставщик данных. Если ключ RapidAPI или Apify не задан, бот не падает и отвечает: `Курсы Investing временно недоступны. Проверьте настройки источника.`
+
+Поддерживаемые пары:
+
+```text
+USD/RUB, EUR/RUB, CNY/RUB, GBP/RUB, AED/RUB, THB/RUB, KRW/RUB, JPY/RUB
+```
+
+Live-курсы кэшируются на 60 секунд, чтобы не дергать внешний источник при каждом клике.

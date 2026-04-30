@@ -6,7 +6,8 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import Settings
-from handlers.start import CAPABILITIES_BUTTON, CBR_CALC_BUTTON, INVESTING_CALC_BUTTON
+from core.models import CurrencyRate, RatesSnapshot
+from handlers.start import CAPABILITIES_BUTTON, CBR_CALC_BUTTON, INVESTING_CALC_BUTTON, main_menu_keyboard
 from services.cbr import CBRService, CBRServiceError
 from services.converter import (
     SUPPORTED_CALCULATOR_CURRENCIES,
@@ -16,8 +17,7 @@ from services.converter import (
     looks_like_convert_attempt,
     parse_convert_request,
 )
-from services.rates.cbr import CBRRateSource
-from services.rates.formatter import DEFAULT_RATE_ORDER, format_cbr_rates
+from services.rates.market import MarketRate, MarketRateProviderError, PairUnavailableError
 
 logger = logging.getLogger(__name__)
 router = Router(name="converter")
@@ -40,6 +40,19 @@ INVESTING_CALC_UNAVAILABLE_TEXT = (
     "100 usd\n"
     "10 000 usd +2%"
 )
+
+
+def market_rate_to_snapshot(rate: MarketRate) -> RatesSnapshot:
+    rate_date = rate.fetched_at.date()
+    currency_rate = CurrencyRate(
+        code=rate.code,
+        name=rate.pair,
+        nominal=1,
+        value=rate.value,
+        unit_rate=rate.value,
+        date=rate_date,
+    )
+    return RatesSnapshot(date=rate_date, rates={rate.code: currency_rate})
 
 
 def get_capabilities_hint() -> str:
@@ -83,7 +96,7 @@ def get_new_calculation_hint() -> str:
         "10 000 usd +2%\n"
         "1 000 000 rub в usd\n"
         "\n"
-        "Полный список возможностей — в разделе:\n"
+        "Больше возможностей — в разделе:\n"
         "❓ Что умеет бот"
     )
 
@@ -91,11 +104,10 @@ def get_new_calculation_hint() -> str:
 def calculator_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📊 Курсы сейчас", callback_data="calc:rates")],
             [
-                InlineKeyboardButton(text="⚙️ Источник: ЦБ РФ", callback_data="calc:source"),
                 InlineKeyboardButton(text="🔁 Новый расчёт", callback_data="calc:new"),
-            ],
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+            ]
         ]
     )
 
@@ -120,7 +132,7 @@ async def show_capabilities(message: Message) -> None:
 async def choose_cbr_calculation(message: Message) -> None:
     _set_user_source(message, CBR_SOURCE)
     await message.answer(
-        "🧮 Расчёт по курсу ЦБ РФ\n\n"
+        "🧮 Расчёт по ЦБ РФ\n\n"
         "Напишите сумму и валюту:\n\n"
         "100 usd\n"
         "10 000 eur +2%\n"
@@ -129,15 +141,21 @@ async def choose_cbr_calculation(message: Message) -> None:
 
 
 @router.message(F.text == INVESTING_CALC_BUTTON)
-async def choose_investing_calculation(message: Message) -> None:
-    await message.answer(INVESTING_CALC_UNAVAILABLE_TEXT)
+async def choose_investing_calculation(message: Message, market_rate_provider) -> None:
+    try:
+        await market_rate_provider.get_rate("USD")
+    except MarketRateProviderError as exc:
+        await message.answer(str(exc))
+        return
 
-
-@router.callback_query(F.data == "calc:source")
-async def show_rate_source(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if isinstance(callback.message, Message):
-        await callback.message.answer("Источник курса: официальный курс ЦБ РФ.")
+    _set_user_source(message, INVESTING_SOURCE)
+    await message.answer(
+        "💱 Расчёт по Investing\n\n"
+        "Напишите сумму и валюту:\n\n"
+        "100 usd\n"
+        "10 000 usd +2%\n"
+        "1 000 000 rub в usd"
+    )
 
 
 @router.callback_query(F.data == "calc:new")
@@ -147,24 +165,11 @@ async def new_calculation(callback: CallbackQuery) -> None:
         await callback.message.answer(get_new_calculation_hint())
 
 
-@router.callback_query(F.data == "calc:rates")
-async def show_current_rates_from_calculator(
-    callback: CallbackQuery,
-    cbr_service: CBRService,
-    app_config: Settings,
-) -> None:
+@router.callback_query(F.data == "main_menu")
+async def show_main_menu(callback: CallbackQuery) -> None:
     await callback.answer()
-    if not isinstance(callback.message, Message):
-        return
-
-    try:
-        rates = await CBRRateSource(cbr_service, app_config).get_rates()
-    except CBRServiceError:
-        logger.exception("Could not fetch CBR rates from calculator button")
-        await callback.message.answer("Не удалось получить курсы ЦБ РФ. Попробуйте чуть позже.")
-        return
-
-    await callback.message.answer(format_cbr_rates(rates, DEFAULT_RATE_ORDER))
+    if isinstance(callback.message, Message):
+        await callback.message.answer("Главное меню", reply_markup=main_menu_keyboard())
 
 
 @router.message(F.text)
@@ -172,6 +177,7 @@ async def convert_currency(
     message: Message,
     cbr_service: CBRService,
     app_config: Settings,
+    market_rate_provider,
 ) -> None:
     if message.text is None:
         return
@@ -186,8 +192,29 @@ async def convert_currency(
         await message.answer(UNKNOWN_CURRENCY_TEXT)
         return
 
-    if _get_user_source(message) == INVESTING_SOURCE:
-        await message.answer(INVESTING_CALC_UNAVAILABLE_TEXT)
+    active_source = _get_user_source(message)
+
+    if active_source == INVESTING_SOURCE:
+        rate_code = request.to_code if request.direction == "rub_to_currency" else request.from_code
+        try:
+            market_rate = await market_rate_provider.get_rate(rate_code)
+        except PairUnavailableError as exc:
+            await message.answer(str(exc))
+            return
+        except MarketRateProviderError as exc:
+            user_rate_source.pop(message.from_user.id, None) if message.from_user is not None else None
+            await message.answer(str(exc))
+            return
+
+        result = calculate_conversion(request, market_rate_to_snapshot(market_rate), source="Investing")
+        if result is None:
+            await message.answer(f"Пара {rate_code}/RUB временно недоступна в Investing.")
+            return
+
+        await message.answer(
+            format_calculator_result(result),
+            reply_markup=calculator_result_keyboard(),
+        )
         return
 
     today = datetime.now(ZoneInfo(app_config.timezone)).date()
