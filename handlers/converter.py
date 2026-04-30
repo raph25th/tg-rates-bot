@@ -11,7 +11,7 @@ from services.converter import (
     SUPPORTED_CALCULATOR_CURRENCIES,
     convert_currency as calculate_conversion,
     format_calculator_result,
-    is_supported_currency,
+    is_supported_request,
     looks_like_convert_attempt,
     parse_convert_request,
 )
@@ -25,7 +25,13 @@ UNKNOWN_CURRENCY_TEXT = (
     + ", ".join(SUPPORTED_CALCULATOR_CURRENCIES)
     + "."
 )
-CONVERT_HINT_TEXT = "Напиши сумму и валюту, например: 100 usd"
+CONVERT_HINT_TEXT = (
+    "Введите сумму и валюту, например:\n\n"
+    "100 usd\n"
+    "10 000 eur\n"
+    "10 000 usd +2%\n"
+    "1 000 000 rub usd"
+)
 
 
 def calculator_result_keyboard() -> InlineKeyboardMarkup:
@@ -33,7 +39,7 @@ def calculator_result_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="📊 Курсы сейчас", callback_data="calc:rates")],
             [
-                InlineKeyboardButton(text="⚙️ Источник курса", callback_data="calc:source"),
+                InlineKeyboardButton(text="⚙️ Источник: ЦБ РФ", callback_data="calc:source"),
                 InlineKeyboardButton(text="🔁 Новый расчёт", callback_data="calc:new"),
             ],
         ]
@@ -90,7 +96,7 @@ async def convert_currency(
             await message.answer(CONVERT_HINT_TEXT)
         return
 
-    if not is_supported_currency(request.code):
+    if not is_supported_request(request):
         await message.answer(UNKNOWN_CURRENCY_TEXT)
         return
 
