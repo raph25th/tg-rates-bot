@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import argparse
+import asyncio
+import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -13,6 +16,8 @@ from services.rates.market.base import (
     PairUnavailableError,
     pair_for_code,
 )
+
+logger = logging.getLogger(__name__)
 
 DIRECT_TICKERS: dict[str, str] = {
     "USD": "RUB=X",
@@ -36,11 +41,10 @@ USD_CROSS_TICKERS: dict[str, str] = {
 
 class YahooMarketRateProvider:
     source = YAHOO_MARKET_SOURCE
-    base_url = "https://query1.finance.yahoo.com/v8/finance/chart"
 
-    def __init__(self, app_config: Settings, timeout_seconds: int = 10) -> None:
+    def __init__(self, app_config: Settings) -> None:
         self.app_config = app_config
-        self.timeout_seconds = timeout_seconds
+        self._ticker_factory = None
 
     async def get_rate(self, code: str) -> MarketRate:
         upper_code = code.upper()
@@ -93,39 +97,41 @@ class YahooMarketRateProvider:
 
     async def _fetch_ticker_value(self, ticker: str) -> Decimal | None:
         try:
-            import aiohttp
-
-            timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{self.base_url}/{ticker}",
-                    params={"range": "1d", "interval": "1m"},
-                ) as response:
-                    response.raise_for_status()
-                    payload = await response.json()
+            return await asyncio.to_thread(self._fetch_ticker_value_sync, ticker)
         except Exception as exc:
-            raise MarketRateProviderError(MARKET_UNAVAILABLE_TEXT) from exc
+            logger.warning("Yahoo ticker failed: %s; error: %s", ticker, exc)
+            return None
 
-        return _extract_chart_price(payload)
+    def _fetch_ticker_value_sync(self, ticker: str) -> Decimal | None:
+        ticker_obj = self._make_ticker(ticker)
+        price, field_name = _extract_fast_info_price(ticker_obj.fast_info)
+        logger.info("Yahoo ticker requested: %s; field: %s; value: %s", ticker, field_name or "missing", price)
+        return price
+
+    def _make_ticker(self, ticker: str):
+        if self._ticker_factory is not None:
+            return self._ticker_factory(ticker)
+        import yfinance as yf
+
+        return yf.Ticker(ticker)
 
 
-def _extract_chart_price(payload: dict) -> Decimal | None:
+def _extract_fast_info_price(fast_info) -> tuple[Decimal | None, str | None]:
+    fields = ("lastPrice", "regularMarketPrice", "previousClose", "regularMarketPreviousClose")
     try:
-        result = payload["chart"]["result"][0]
-    except (KeyError, IndexError, TypeError):
-        return None
+        info = dict(fast_info)
+    except Exception:
+        info = fast_info
 
-    meta_price = result.get("meta", {}).get("regularMarketPrice")
-    parsed_meta = _to_decimal(meta_price)
-    if parsed_meta is not None and parsed_meta > 0:
-        return parsed_meta
-
-    closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
-    for close in reversed(closes):
-        parsed_close = _to_decimal(close)
-        if parsed_close is not None and parsed_close > 0:
-            return parsed_close
-    return None
+    for field in fields:
+        try:
+            value = info.get(field)
+        except AttributeError:
+            value = None
+        parsed = _to_decimal(value)
+        if parsed is not None and parsed > 0:
+            return parsed, field
+    return None, None
 
 
 def _to_decimal(value) -> Decimal | None:
@@ -135,3 +141,34 @@ def _to_decimal(value) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+
+
+async def _diagnose(code: str) -> int:
+    settings = Settings(bot_token="diagnostic-token", market_rate_provider="yahoo")
+    provider = YahooMarketRateProvider(settings)
+    upper_code = code.upper()
+    ticker = DIRECT_TICKERS.get(upper_code)
+    if ticker is None:
+        print(f"Unsupported code: {upper_code}")
+        return 1
+
+    print(f"ticker: {ticker}")
+    print(f"source: {provider.source}")
+    ticker_obj = provider._make_ticker(ticker)
+    price, field = _extract_fast_info_price(ticker_obj.fast_info)
+    print(f"{field or 'lastPrice'}: {price}")
+    rate = await provider.get_rate(upper_code)
+    print(f"MarketRate: {rate}")
+    return 0
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    parser = argparse.ArgumentParser(description="Diagnose Yahoo Finance market rate provider")
+    parser.add_argument("code", help="Currency code, for example USD")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(_diagnose(args.code)))
+
+
+if __name__ == "__main__":
+    main()

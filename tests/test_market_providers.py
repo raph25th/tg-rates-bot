@@ -12,7 +12,7 @@ from services.rates.market.cache import CachedMarketRateProvider
 from services.rates.market.formatter import format_market_rates
 from services.rates.market.investing_rapidapi import InvestingRapidApiProvider
 from services.rates.market.mock import MockMarketRateProvider
-from services.rates.market.yahoo import YahooMarketRateProvider, _extract_chart_price
+from services.rates.market.yahoo import YahooMarketRateProvider, _extract_fast_info_price
 
 
 def make_settings(**kwargs) -> Settings:
@@ -36,6 +36,8 @@ def test_factory_selects_yahoo_provider() -> None:
     provider = build_market_rate_provider(make_settings(market_rate_provider="yahoo"))
 
     assert provider.source == YAHOO_MARKET_SOURCE
+    assert isinstance(provider.provider, YahooMarketRateProvider)
+    assert not isinstance(provider.provider, MockMarketRateProvider)
 
 
 @pytest.mark.asyncio
@@ -136,7 +138,49 @@ async def test_unavailable_yahoo_does_not_crash() -> None:
     assert str(exc.value) == MARKET_UNAVAILABLE_TEXT
 
 
-def test_yahoo_chart_price_parser() -> None:
-    payload = {"chart": {"result": [{"meta": {"regularMarketPrice": 92.5}}]}}
+def test_yahoo_reads_last_price_from_fast_info() -> None:
+    price, field = _extract_fast_info_price({"lastPrice": 92.5})
 
-    assert _extract_chart_price(payload) == Decimal("92.5")
+    assert price == Decimal("92.5")
+    assert field == "lastPrice"
+
+
+def test_yahoo_uses_fast_info_fallback_fields() -> None:
+    price, field = _extract_fast_info_price({"previousClose": 91.25})
+
+    assert price == Decimal("91.25")
+    assert field == "previousClose"
+
+
+@pytest.mark.asyncio
+async def test_yahoo_direct_ticker_uses_fast_info_last_price() -> None:
+    class FakeTicker:
+        fast_info = {"lastPrice": 93.75}
+
+    provider = YahooMarketRateProvider(make_settings(market_rate_provider="yahoo"))
+    provider._ticker_factory = lambda ticker: FakeTicker()
+
+    rate = await provider.get_rate("USD")
+
+    assert rate.pair == "USD/RUB"
+    assert rate.source == YAHOO_MARKET_SOURCE
+    assert rate.value == Decimal("93.75")
+
+
+@pytest.mark.asyncio
+async def test_yahoo_falls_back_through_usd_cross() -> None:
+    class FakeTicker:
+        def __init__(self, price):
+            self.fast_info = {"lastPrice": price} if price is not None else {}
+
+    prices = {
+        "JPYRUB=X": None,
+        "RUB=X": 90,
+        "JPY=X": 150,
+    }
+    provider = YahooMarketRateProvider(make_settings(market_rate_provider="yahoo"))
+    provider._ticker_factory = lambda ticker: FakeTicker(prices[ticker])
+
+    rate = await provider.get_rate("JPY")
+
+    assert rate.value == Decimal("0.6")
