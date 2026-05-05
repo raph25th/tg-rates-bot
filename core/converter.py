@@ -26,6 +26,7 @@ class ConvertRequest:
     from_code: str
     to_code: str = RUB_CODE
     percent: Decimal | None = None
+    extra_payment_amount: Decimal | None = None
     direction: str = "currency_to_rub"
 
     @property
@@ -43,6 +44,10 @@ class ConversionResult:
     result: Decimal
     rate: CurrencyRate
     adjusted_unit_rate: Decimal
+    main_payment_rub: Decimal | None = None
+    extra_payment_amount: Decimal | None = None
+    extra_payment_rub: Decimal | None = None
+    final_result: Decimal | None = None
     source: str = DEFAULT_CBR_SOURCE
 
     @property
@@ -63,6 +68,7 @@ def convert_parser_request(request: ConversionRequest) -> ConvertRequest:
         from_code=request.from_currency,
         to_code=request.to_currency,
         percent=request.percent_adjustment,
+        extra_payment_amount=request.extra_payment_amount,
         direction=request.direction,
     )
 
@@ -74,6 +80,7 @@ def is_supported_request(request: ConvertRequest) -> bool:
             from_currency=request.from_code,
             to_currency=request.to_code,
             percent_adjustment=request.percent,
+            extra_payment_amount=request.extra_payment_amount,
             direction=request.direction,
         )
     )
@@ -91,15 +98,19 @@ def convert_currency(
     source: str = DEFAULT_CBR_SOURCE,
 ) -> ConversionResult | None:
     if request.direction == "rub_to_currency":
+        if request.extra_payment_amount is not None:
+            return None
         rate = snapshot.rates.get(request.to_code)
         if rate is None:
             return None
         adjusted_rate = apply_percent(rate.unit_rate, request.percent)
+        result_amount = request.amount / adjusted_rate
         return ConversionResult(
             request=request,
-            result=request.amount / adjusted_rate,
+            result=result_amount,
             rate=rate,
             adjusted_unit_rate=adjusted_rate,
+            final_result=result_amount,
             source=source,
         )
 
@@ -108,11 +119,19 @@ def convert_currency(
         return None
 
     adjusted_rate = apply_percent(rate.unit_rate, request.percent)
+    main_payment_rub = request.amount * adjusted_rate
+    extra_payment_amount = request.extra_payment_amount
+    extra_payment_rub = extra_payment_amount * adjusted_rate if extra_payment_amount is not None else None
+    final_result = main_payment_rub + (extra_payment_rub or Decimal("0"))
     return ConversionResult(
         request=request,
-        result=request.amount * adjusted_rate,
+        result=final_result,
         rate=rate,
         adjusted_unit_rate=adjusted_rate,
+        main_payment_rub=main_payment_rub,
+        extra_payment_amount=extra_payment_amount,
+        extra_payment_rub=extra_payment_rub,
+        final_result=final_result,
         source=source,
     )
 
@@ -124,7 +143,7 @@ def format_percent(percent: Decimal) -> str:
 
 
 def format_rub(value: Decimal) -> str:
-    return f"{format_number(value, places=2, trim_zero_fraction=False)} ₽"
+    return f"{format_number(value, places=2, trim_zero_fraction=False)} RUB"
 
 
 def format_currency_amount(value: Decimal, code: str) -> str:
@@ -135,8 +154,22 @@ def format_currency_amount(value: Decimal, code: str) -> str:
 
 def format_input_amount(request: ConvertRequest) -> str:
     if request.from_code == RUB_CODE:
-        return f"{format_plain_amount(request.amount)} ₽"
+        return f"{format_plain_amount(request.amount)} RUB"
     return f"{format_plain_amount(request.amount)} {request.from_code}"
+
+
+def format_extra_payment_amount(result: ConversionResult) -> str:
+    amount = result.extra_payment_amount or Decimal("0")
+    return f"{format_plain_amount(amount)} {result.rate.code}"
+
+
+def has_extra_payment(result: ConversionResult) -> bool:
+    return (
+        result.request.direction == "currency_to_rub"
+        and result.extra_payment_amount is not None
+        and result.extra_payment_rub is not None
+        and result.main_payment_rub is not None
+    )
 
 
 def format_calculator_title(source: str) -> str:
@@ -155,7 +188,7 @@ def format_calculator_result(result: ConversionResult) -> str:
         format_input_amount(request),
         "",
         "Курс:",
-        f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+        f"1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
     ]
 
     if request.percent is not None:
@@ -166,7 +199,19 @@ def format_calculator_result(result: ConversionResult) -> str:
                 format_percent(request.percent),
                 "",
                 "Расчётный курс:",
-                f"1 {rate.code} = {format_rate(result.adjusted_unit_rate)} ₽",
+                f"1 {rate.code} = {format_rate(result.adjusted_unit_rate)} RUB",
+            ]
+        )
+
+    if has_extra_payment(result):
+        lines.extend(
+            [
+                "",
+                "Основной платёж:",
+                f"{format_input_amount(request)} = {format_rub(result.main_payment_rub or Decimal('0'))}",
+                "",
+                "Доп. платёж:",
+                f"{format_extra_payment_amount(result)} = {format_rub(result.extra_payment_rub or Decimal('0'))}",
             ]
         )
 
@@ -192,20 +237,37 @@ def format_client_calculation_text(result: ConversionResult) -> str:
         title,
         "",
         f"Сумма: {format_input_amount(request)}",
-        f"Актуальный курс: 1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+        f"Актуальный курс: 1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
     ]
 
     if request.percent is not None:
         lines.append(f"Ставка: {format_percent(request.percent)}")
         if result.adjusted_unit_rate != rate.unit_rate:
-            lines.append(f"Расчётный курс: 1 {rate.code} = {format_rate(result.adjusted_unit_rate)} ₽")
+            lines.append(f"Расчётный курс: 1 {rate.code} = {format_rate(result.adjusted_unit_rate)} RUB")
 
-    lines.extend(
-        [
-            "",
-            f"Итого: {format_currency_amount(result.result, request.to_code)}",
-        ]
-    )
+    if has_extra_payment(result):
+        main_payment = result.main_payment_rub or Decimal("0")
+        extra_payment = result.extra_payment_rub or Decimal("0")
+        lines.extend(
+            [
+                "",
+                "Основной платёж:",
+                f"{format_input_amount(request)} = {format_rub(main_payment)}",
+                "",
+                "Доп. платёж:",
+                f"{format_extra_payment_amount(result)} = {format_rub(extra_payment)}",
+                "",
+                "Итого:",
+                f"{format_rub(main_payment)} + {format_rub(extra_payment)} = {format_rub(result.result)}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                f"Итого: {format_currency_amount(result.result, request.to_code)}",
+            ]
+        )
     return "\n".join(lines)
 
 

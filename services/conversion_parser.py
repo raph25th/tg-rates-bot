@@ -43,6 +43,10 @@ _PERCENT_RE = re.compile(
     r"^(?:(?P<word>плюс|минус)|(?P<sign>[+-]))?\s*(?P<value>\d+(?:[.,]\d+)?)\s*%$",
     re.IGNORECASE,
 )
+_EXTRA_PAYMENT_RE = re.compile(
+    r"^\+\s*(?P<amount>\d{1,3}(?:[ \t_.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(?P<label>пп|\$)?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,7 @@ class ConversionRequest:
     from_currency: str
     to_currency: str
     percent_adjustment: Decimal | None
+    extra_payment_amount: Decimal | None
     direction: str
 
 
@@ -68,6 +73,7 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
         return None
 
     percent: Decimal | None = None
+    extra_payment_amount: Decimal | None = None
     tokens: list[str] = []
     index = 0
     while index < len(raw_tokens):
@@ -75,6 +81,12 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
         parsed_percent = _parse_percent_tokens(raw_tokens, index)
         if parsed_percent is not None:
             percent, consumed_tokens = parsed_percent
+            index += consumed_tokens
+            continue
+
+        parsed_extra_payment = _parse_extra_payment_tokens(raw_tokens, index)
+        if parsed_extra_payment is not None:
+            extra_payment_amount, consumed_tokens = parsed_extra_payment
             index += consumed_tokens
             continue
 
@@ -115,6 +127,7 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
         from_currency=from_currency,
         to_currency=to_currency,
         percent_adjustment=percent,
+        extra_payment_amount=extra_payment_amount,
         direction=direction,
     )
 
@@ -215,6 +228,16 @@ def _parse_percent_tokens(tokens: list[str], start_index: int) -> tuple[Decimal,
     return None
 
 
+def _parse_extra_payment_tokens(tokens: list[str], start_index: int) -> tuple[Decimal, int] | None:
+    max_tokens = min(3, len(tokens) - start_index)
+    for size in range(max_tokens, 0, -1):
+        candidate = " ".join(tokens[start_index : start_index + size])
+        parsed = _parse_extra_payment(candidate)
+        if parsed is not None:
+            return parsed, size
+    return None
+
+
 def _parse_percent(value: str) -> Decimal | None:
     match = _PERCENT_RE.match(value)
     if match is None:
@@ -231,4 +254,15 @@ def _parse_percent(value: str) -> Decimal | None:
         return abs(parsed)
     if match.group("sign") == "-":
         return -abs(parsed)
+    return parsed
+
+
+def _parse_extra_payment(value: str) -> Decimal | None:
+    match = _EXTRA_PAYMENT_RE.match(value)
+    if match is None:
+        return None
+
+    parsed = _parse_amount(match.group("amount"))
+    if parsed is None or parsed <= 0:
+        return None
     return parsed

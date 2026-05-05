@@ -225,7 +225,6 @@ async def answer_spread(
     await message.answer(
         format_spread_message(spreads),
         reply_markup=spread_after_rates_keyboard(),
-        parse_mode="HTML",
     )
 
 

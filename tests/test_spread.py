@@ -59,12 +59,14 @@ def test_format_spread_message_shows_negative_spread_with_minus() -> None:
 
     assert "📉 Спред ЦБ РФ / рынок" in message
     assert (
-        "<code>USD/RUB — Доллар США\n"
+        "USD/RUB — Доллар США\n"
         "ЦБ РФ: 75,4388\n"
         "Рынок: 74,8850\n"
         "Разница: -0,5538\n"
-        "Спред: -0,73%</code>"
+        "Спред: -0,73%"
     ) in message
+    assert "<code>" not in message
+    assert "</code>" not in message
     assert "Обновлено:\n23:45 МСК" in message
     assert "₽" not in message
 
@@ -147,7 +149,7 @@ async def test_answer_spread_sends_html_message_with_refresh_button() -> None:
     await answer_spread(message, FakeCbrService(), make_settings(), market_provider)
 
     assert market_provider.requested_codes == ["USD", "EUR", "CNY"]
-    assert message.answers[0]["parse_mode"] == "HTML"
+    assert message.answers[0]["parse_mode"] is None
     assert "📉 Спред ЦБ РФ / рынок" in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is not None
 

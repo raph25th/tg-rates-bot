@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from html import escape
 from typing import Iterable
 
 from core.money import format_number, format_rate
@@ -63,15 +62,15 @@ def _format_signed_percent(value: Decimal) -> str:
 
 
 def _format_spread_block(spread: SpreadRate) -> str:
-    lines = [
+    return "\n".join(
+        [
         f"{spread.code}/RUB — {currency_display_name(spread.code)}",
         f"ЦБ РФ: {format_rate(spread.cbr_rate)}",
         f"Рынок: {format_rate(spread.market_rate)}",
         f"Разница: {_format_signed_rate(spread.difference)}",
         f"Спред: {_format_signed_percent(spread.percent)}%",
-    ]
-    block = "\n".join(lines)
-    return f"<code>{escape(block)}</code>"
+        ]
+    )
 
 
 def format_spread_message(spreads: list[SpreadRate]) -> str:

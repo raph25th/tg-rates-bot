@@ -51,6 +51,7 @@ NO_CLIENT_CALCULATION_TEXT = (
     "10 000 usd +2%\n"
     "1 000 000 rub в usd"
 )
+EXTRA_PAYMENT_REVERSE_UNSUPPORTED_TEXT = "Доп. платёж пока поддерживается только для расчётов из валюты в RUB."
 
 
 def market_rate_to_snapshot(rate: MarketRate) -> RatesSnapshot:
@@ -107,6 +108,13 @@ def get_capabilities_hint() -> str:
         "10 000 usd в руб -1,5%\n"
         "1 000 000 rub в usd +2%\n"
         "\n"
+        "С доп. платежом:\n"
+        "10 000 usd +2% +100ПП\n"
+        "10 000 usd +2% +100$\n"
+        "10 000 usd +2% +100\n"
+        "\n"
+        "Доп. платёж считается по расчётному курсу с учётом ставки.\n"
+        "\n"
         "Можно писать как код валюты, так и словами:\n"
         "10 000 usd\n"
         "10 000 долларов\n"
@@ -126,6 +134,7 @@ def get_new_calculation_hint() -> str:
         "100 usd\n"
         "10 000 usd +2%\n"
         "1 000 000 rub в usd\n"
+        "10 000 usd +2% +100ПП\n"
         "\n"
         "Больше возможностей — в разделе:\n"
         "❓ Что умеет бот"
@@ -256,6 +265,10 @@ async def convert_currency(
 
     if not is_supported_request(request):
         await message.answer(UNKNOWN_CURRENCY_TEXT)
+        return
+
+    if request.is_reverse and request.extra_payment_amount is not None:
+        await message.answer(EXTRA_PAYMENT_REVERSE_UNSUPPORTED_TEXT)
         return
 
     active_source = _get_user_source(message)
