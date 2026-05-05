@@ -1,7 +1,6 @@
 from datetime import date
 from decimal import Decimal
 
-from core.converter import MARKET_RATE_NOTICE
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_rate
 from services.converter import convert_currency, format_calculator_result, parse_convert_request
@@ -115,10 +114,7 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
     assert result is not None
 
     assert format_calculator_result(result) == (
-        "💱 Расчёт валюты\n"
-        "\n"
-        "Источник:\n"
-        "ЦБ РФ — официальный курс\n"
+        "💱 Расчёт по курсу ЦБ РФ\n"
         "\n"
         "Сумма:\n"
         "10 000 USD\n"
@@ -126,7 +122,7 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
         "Курс:\n"
         "1 USD = 74,8806 ₽\n"
         "\n"
-        "Корректировка к курсу:\n"
+        "Корректировка:\n"
         "+2%\n"
         "\n"
         "Расчётный курс:\n"
@@ -136,10 +132,7 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
         "763 782,12 ₽\n"
         "\n"
         "Дата курса:\n"
-        "30.04.2026\n"
-        "\n"
-        "—\n"
-        "Сформировано через @kurs_rub_bot"
+        "30.04.2026"
     )
 
 
@@ -150,10 +143,7 @@ def test_format_calculator_result_from_rub() -> None:
     assert result is not None
 
     assert format_calculator_result(result) == (
-        "💱 Расчёт валюты\n"
-        "\n"
-        "Источник:\n"
-        "ЦБ РФ — официальный курс\n"
+        "💱 Расчёт по курсу ЦБ РФ\n"
         "\n"
         "Сумма:\n"
         "1 000 000 ₽\n"
@@ -165,14 +155,11 @@ def test_format_calculator_result_from_rub() -> None:
         "11 327,26 EUR\n"
         "\n"
         "Дата курса:\n"
-        "30.04.2026\n"
-        "\n"
-        "—\n"
-        "Сформировано через @kurs_rub_bot"
+        "30.04.2026"
     )
 
 
-def test_format_calculator_result_for_market_source_has_notice() -> None:
+def test_format_calculator_result_for_market_source_is_clean() -> None:
     request = parse_convert_request("100 USD")
     assert request is not None
     result = convert_currency(request, make_snapshot(), source="Yahoo Finance — рыночный ориентир")
@@ -180,6 +167,22 @@ def test_format_calculator_result_for_market_source_has_notice() -> None:
 
     formatted = format_calculator_result(result)
 
-    assert "Источник:\nYahoo Finance — рыночный ориентир" in formatted
-    assert MARKET_RATE_NOTICE in formatted
+    assert formatted == (
+        "💱 Расчёт по рыночному курсу\n"
+        "\n"
+        "Сумма:\n"
+        "100 USD\n"
+        "\n"
+        "Курс:\n"
+        "1 USD = 74,8806 ₽\n"
+        "\n"
+        "Итого:\n"
+        "7 488,06 ₽\n"
+        "\n"
+        "Дата курса:\n"
+        "30.04.2026"
+    )
+    assert "Источник:" not in formatted
+    assert "Сформировано через @kurs_rub_bot" not in formatted
+    assert "Рыночный курс является ориентиром" not in formatted
     assert "Итого:\n7 488,06 ₽" in formatted

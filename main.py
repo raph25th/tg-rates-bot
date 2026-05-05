@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 
 from config import Settings
 from db.repo import UserRepository
-from handlers import converter, rates, settings as settings_handlers
+from handlers import converter, notifications, rates, settings as settings_handlers
 from handlers.start import router as start_router
 from services.cbr import CBRService
 from services.rates.market import build_market_rate_provider
@@ -189,6 +189,7 @@ async def run() -> None:
     dp = Dispatcher()
     dp.include_router(start_router)
     dp.include_router(rates.router)
+    dp.include_router(notifications.router)
     dp.include_router(settings_handlers.router)
     dp.include_router(converter.router)
     logger.info("Routers included")

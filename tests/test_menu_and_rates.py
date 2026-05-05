@@ -4,6 +4,7 @@ from decimal import Decimal
 from handlers.start import (
     CAPABILITIES_BUTTON,
     CBR_CALC_BUTTON,
+    CBR_NOTIFICATIONS_BUTTON,
     CBR_RATES_BUTTON,
     INVESTING_CALC_BUTTON,
     INVESTING_RATES_BUTTON,
@@ -15,7 +16,7 @@ from services.rates.formatter import format_cbr_rates
 from services.rates.investing import get_investing_unavailable_message
 
 
-def test_main_menu_contains_five_buttons() -> None:
+def test_main_menu_contains_six_buttons() -> None:
     keyboard = main_menu_keyboard()
     texts = [button.text for row in keyboard.keyboard for button in row]
 
@@ -24,10 +25,12 @@ def test_main_menu_contains_five_buttons() -> None:
         INVESTING_RATES_BUTTON,
         CBR_CALC_BUTTON,
         INVESTING_CALC_BUTTON,
+        CBR_NOTIFICATIONS_BUTTON,
         CAPABILITIES_BUTTON,
     ]
     assert INVESTING_RATES_BUTTON == "📈 Рыночный курс"
     assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
+    assert CBR_NOTIFICATIONS_BUTTON == "🔔 Уведомления ЦБ"
     assert all("Investing" not in text for text in texts)
 
 

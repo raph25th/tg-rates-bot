@@ -65,6 +65,16 @@ class UserRepository:
                 );
                 """
             )
+            self._ensure_users_column(
+                connection,
+                "cbr_update_notifications",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            self._ensure_users_column(
+                connection,
+                "last_sent_cbr_date",
+                "TEXT",
+            )
 
     def ensure_user(self, telegram_id: int) -> None:
         with self._connect() as connection:
@@ -82,7 +92,7 @@ class UserRepository:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT telegram_id, mode, daily_time, timezone
+                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
                 FROM users
                 WHERE telegram_id = ?
                 """,
@@ -96,6 +106,8 @@ class UserRepository:
             daily_time=row["daily_time"],
             timezone=row["timezone"],
             currencies=currencies,
+            cbr_update_notifications=bool(row["cbr_update_notifications"]),
+            last_sent_cbr_date=_parse_date(row["last_sent_cbr_date"]),
         )
 
     def set_mode(self, telegram_id: int, mode: str) -> UserSettings:
@@ -186,7 +198,7 @@ class UserRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT telegram_id, mode, daily_time, timezone
+                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
                 FROM users
                 WHERE mode = 'daily'
                 ORDER BY telegram_id
@@ -199,9 +211,59 @@ class UserRepository:
                     daily_time=row["daily_time"],
                     timezone=row["timezone"],
                     currencies=self._get_currencies(connection, row["telegram_id"]),
+                    cbr_update_notifications=bool(row["cbr_update_notifications"]),
+                    last_sent_cbr_date=_parse_date(row["last_sent_cbr_date"]),
                 )
                 for row in rows
             ]
+
+    def set_cbr_update_notifications(self, telegram_id: int, enabled: bool) -> UserSettings:
+        self.ensure_user(telegram_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET cbr_update_notifications = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_id = ?
+                """,
+                (1 if enabled else 0, telegram_id),
+            )
+        return self.get_user_settings(telegram_id)
+
+    def get_cbr_update_notification_users(self) -> list[UserSettings]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
+                FROM users
+                WHERE cbr_update_notifications = 1
+                ORDER BY telegram_id
+                """
+            ).fetchall()
+            return [
+                UserSettings(
+                    telegram_id=row["telegram_id"],
+                    mode=row["mode"],
+                    daily_time=row["daily_time"],
+                    timezone=row["timezone"],
+                    currencies=self._get_currencies(connection, row["telegram_id"]),
+                    cbr_update_notifications=bool(row["cbr_update_notifications"]),
+                    last_sent_cbr_date=_parse_date(row["last_sent_cbr_date"]),
+                )
+                for row in rows
+            ]
+
+    def mark_cbr_update_notification_sent(self, telegram_id: int, rate_date: date) -> None:
+        self.ensure_user(telegram_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET last_sent_cbr_date = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_id = ?
+                """,
+                (rate_date.isoformat(), telegram_id),
+            )
 
     def was_daily_sent(self, telegram_id: int, rate_date: date) -> bool:
         with self._connect() as connection:
@@ -240,3 +302,22 @@ class UserRepository:
             (telegram_id,),
         ).fetchall()
         return normalize_currency_codes(row["currency_code"] for row in rows)
+
+    def _ensure_users_column(
+        self,
+        connection: sqlite3.Connection,
+        column_name: str,
+        column_definition: str,
+    ) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if column_name not in columns:
+            connection.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_definition}")
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    return date.fromisoformat(value)

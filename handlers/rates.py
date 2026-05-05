@@ -119,6 +119,13 @@ async def show_cbr_rates_button(message: Message) -> None:
     await message.answer(_cbr_menu_text(), reply_markup=cbr_rates_menu_keyboard())
 
 
+@router.callback_query(F.data == "cbr:menu")
+async def show_cbr_rates_menu(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if isinstance(callback.message, Message):
+        await callback.message.answer(_cbr_menu_text(), reply_markup=cbr_rates_menu_keyboard())
+
+
 @router.callback_query(F.data == "cbr:today")
 async def show_cbr_rates_today(
     callback: CallbackQuery,

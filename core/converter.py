@@ -139,35 +139,30 @@ def format_input_amount(request: ConvertRequest) -> str:
     return f"{format_plain_amount(request.amount)} {request.from_code}"
 
 
+def format_calculator_title(source: str) -> str:
+    if "цб" in source.casefold():
+        return "💱 Расчёт по курсу ЦБ РФ"
+    return "💱 Расчёт по рыночному курсу"
+
+
 def format_calculator_result(result: ConversionResult) -> str:
     request = result.request
     rate = result.rate
     lines = [
-        "💱 Расчёт валюты",
-        "",
-        "Источник:",
-        result.source,
-    ]
-
-    if "рыночный ориентир" in result.source.lower():
-        lines.extend(["", MARKET_RATE_NOTICE])
-
-    lines.extend(
-        [
+        format_calculator_title(result.source),
         "",
         "Сумма:",
         format_input_amount(request),
         "",
         "Курс:",
         f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
-        ]
-    )
+    ]
 
     if request.percent is not None:
         lines.extend(
             [
                 "",
-                "Корректировка к курсу:",
+                "Корректировка:",
                 format_percent(request.percent),
                 "",
                 "Расчётный курс:",
@@ -184,9 +179,6 @@ def format_calculator_result(result: ConversionResult) -> str:
             "",
             "Дата курса:",
             rate.date.strftime("%d.%m.%Y"),
-            "",
-            "—",
-            "Сформировано через @kurs_rub_bot",
         ]
     )
     return "\n".join(lines)

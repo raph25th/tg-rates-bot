@@ -74,6 +74,9 @@ def get_capabilities_hint() -> str:
         "💱 Расчёт по рынку\n"
         "Подходит для предварительных расчётов в течение дня.\n"
         "\n"
+        "🔔 Уведомления ЦБ\n"
+        "Бот может присылать курс ЦБ РФ после его обновления.\n"
+        "\n"
         "Примеры:\n"
         "\n"
         "Валюта → рубли:\n"
@@ -90,6 +93,11 @@ def get_capabilities_hint() -> str:
         "10 000 usd +2%\n"
         "10 000 usd в руб -1,5%\n"
         "1 000 000 rub в usd +2%\n"
+        "\n"
+        "Можно писать как код валюты, так и словами:\n"
+        "10 000 usd\n"
+        "10 000 долларов\n"
+        "1 000 000 рублей в евро\n"
         "\n"
         "Доступные валюты:\n"
         "USD, EUR, CNY, GBP, AED, THB, KRW, JPY"
@@ -148,6 +156,21 @@ async def choose_cbr_calculation(message: Message) -> None:
         "10 000 eur +2%\n"
         "1 000 000 rub в usd"
     )
+
+
+@router.callback_query(F.data == "calc:cbr")
+async def choose_cbr_calculation_from_callback(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if isinstance(callback.message, Message):
+        if callback.from_user is not None:
+            user_rate_source[callback.from_user.id] = CBR_SOURCE
+        await callback.message.answer(
+            "🧮 Расчёт по ЦБ РФ\n\n"
+            "Напишите сумму и валюту:\n\n"
+            "100 usd\n"
+            "10 000 eur +2%\n"
+            "1 000 000 rub в usd"
+        )
 
 
 @router.message(F.text == INVESTING_CALC_BUTTON)

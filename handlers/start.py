@@ -11,6 +11,7 @@ CBR_RATES_BUTTON = "📊 Курс ЦБ РФ"
 INVESTING_RATES_BUTTON = "📈 Рыночный курс"
 CBR_CALC_BUTTON = "🧮 Расчёт по ЦБ РФ"
 INVESTING_CALC_BUTTON = "💱 Расчёт по рынку"
+CBR_NOTIFICATIONS_BUTTON = "🔔 Уведомления ЦБ"
 CAPABILITIES_BUTTON = "❓ Что умеет бот"
 
 
@@ -19,6 +20,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text=CBR_RATES_BUTTON), KeyboardButton(text=INVESTING_RATES_BUTTON)],
             [KeyboardButton(text=CBR_CALC_BUTTON), KeyboardButton(text=INVESTING_CALC_BUTTON)],
+            [KeyboardButton(text=CBR_NOTIFICATIONS_BUTTON)],
             [KeyboardButton(text=CAPABILITIES_BUTTON)],
         ],
         resize_keyboard=True,
@@ -47,6 +49,11 @@ async def start_handler(message: Message) -> None:
         "10 000 eur +2%\n"
         "1 000 000 rub в usd\n"
         "56 548 468 рублей в USD\n"
+        "\n"
+        "Можно писать как код валюты, так и словами:\n"
+        "10 000 usd\n"
+        "10 000 долларов\n"
+        "1 000 000 рублей в евро\n"
         "\n"
         "Выберите действие 👇",
         reply_markup=main_menu_keyboard(),

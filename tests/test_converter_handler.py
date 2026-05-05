@@ -17,10 +17,15 @@ def test_capabilities_hint_covers_supported_examples() -> None:
     assert "Ориентировочный курс в моменте по данным Yahoo Finance." in hint
     assert "🧮 Расчёт по ЦБ РФ" in hint
     assert "💱 Расчёт по рынку" in hint
+    assert "🔔 Уведомления ЦБ" in hint
+    assert "Бот может присылать курс ЦБ РФ после его обновления." in hint
     assert "100 usd" in hint
     assert "10 000 aed +2%" in hint
     assert "1 000 000 rub в usd" in hint
     assert "10 000 usd в руб -1,5%" in hint
+    assert "Можно писать как код валюты, так и словами:" in hint
+    assert "10 000 долларов" in hint
+    assert "1 000 000 рублей в евро" in hint
     assert "USD, EUR, CNY, GBP, AED, THB, KRW, JPY" in hint
 
 
