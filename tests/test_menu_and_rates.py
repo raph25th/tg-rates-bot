@@ -8,6 +8,7 @@ from handlers.start import (
     CBR_RATES_BUTTON,
     INVESTING_CALC_BUTTON,
     INVESTING_RATES_BUTTON,
+    SPREAD_BUTTON,
     main_menu_keyboard,
 )
 from handlers.rates import cbr_after_rates_keyboard, cbr_rates_menu_keyboard
@@ -16,7 +17,7 @@ from services.rates.formatter import format_cbr_rates
 from services.rates.investing import get_investing_unavailable_message
 
 
-def test_main_menu_contains_six_buttons() -> None:
+def test_main_menu_contains_seven_buttons() -> None:
     keyboard = main_menu_keyboard()
     texts = [button.text for row in keyboard.keyboard for button in row]
 
@@ -25,11 +26,13 @@ def test_main_menu_contains_six_buttons() -> None:
         INVESTING_RATES_BUTTON,
         CBR_CALC_BUTTON,
         INVESTING_CALC_BUTTON,
+        SPREAD_BUTTON,
         CBR_NOTIFICATIONS_BUTTON,
         CAPABILITIES_BUTTON,
     ]
     assert INVESTING_RATES_BUTTON == "📈 Рыночный курс"
     assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
+    assert SPREAD_BUTTON == "📉 Спред"
     assert CBR_NOTIFICATIONS_BUTTON == "🔔 Уведомления ЦБ"
     assert all("Investing" not in text for text in texts)
 
@@ -64,10 +67,10 @@ def test_format_cbr_rates_button_output() -> None:
         "📊 Курсы ЦБ РФ на 30.04.2026\n"
         "\n"
         "<code>USD/RUB — Доллар США\n"
-        "1 USD = 74,8806 ₽</code>\n"
+        "1 USD = 74,8806</code>\n"
         "\n"
         "<code>EUR/RUB — Евро\n"
-        "1 EUR = 85,3200 ₽</code>"
+        "1 EUR = 85,3200</code>"
     )
 
 
@@ -82,9 +85,9 @@ def test_format_cbr_rates_uses_fixed_display_names() -> None:
 
     message = format_cbr_rates(rates, ("CNY", "THB", "KRW"))
 
-    assert "<code>CNY/RUB — Китайский юань\n1 CNY = 11,0343 ₽</code>" in message
-    assert "<code>THB/RUB — Тайский бат\n1 THB = 2,3021 ₽</code>" in message
-    assert "<code>KRW/RUB — Южнокорейская вона\n1 KRW = 0,0508 ₽</code>" in message
+    assert "<code>CNY/RUB — Китайский юань\n1 CNY = 11,0343</code>" in message
+    assert "<code>THB/RUB — Тайский бат\n1 THB = 2,3021</code>" in message
+    assert "<code>KRW/RUB — Южнокорейская вона\n1 KRW = 0,0508</code>" in message
 
 
 def test_format_cbr_rates_escapes_html_in_rate_blocks() -> None:
@@ -94,7 +97,20 @@ def test_format_cbr_rates_escapes_html_in_rate_blocks() -> None:
         "XXX": Rate("XXX", "A&B <test>", 1, Decimal("1.2345"), Decimal("1.2345"), rate_date, "CBR", fetched_at),
     }
 
-    assert "<code>XXX/RUB — A&amp;B &lt;test&gt;\n1 XXX = 1,2345 ₽</code>" in format_cbr_rates(rates, ("XXX",))
+    assert "<code>XXX/RUB — A&amp;B &lt;test&gt;\n1 XXX = 1,2345</code>" in format_cbr_rates(rates, ("XXX",))
+
+
+def test_format_cbr_rates_has_no_ruble_symbol_after_rate_values() -> None:
+    rate_date = date(2026, 5, 5)
+    fetched_at = datetime(2026, 5, 5, 14, 35)
+    rates = {
+        "USD": Rate("USD", "Доллар США", 1, Decimal("75.4388"), Decimal("75.4388"), rate_date, "CBR", fetched_at),
+    }
+
+    message = format_cbr_rates(rates, ("USD",))
+
+    assert "1 USD = 75,4388</code>" in message
+    assert "1 USD = 75,4388 ₽" not in message
 
 
 def test_investing_rates_unavailable_message() -> None:

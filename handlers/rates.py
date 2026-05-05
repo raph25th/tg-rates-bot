@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from config import Settings
 from db.repo import UserRepository
-from handlers.start import CBR_RATES_BUTTON, INVESTING_RATES_BUTTON, main_menu_keyboard
+from handlers.start import CBR_RATES_BUTTON, INVESTING_RATES_BUTTON, SPREAD_BUTTON, main_menu_keyboard
 from services.cbr import CBRService, CBRServiceError
 from services.cbr_date_parser import parse_cbr_date
 from services.formatter import DEFAULT_CURRENCIES, format_rates
@@ -16,12 +16,14 @@ from services.rates.cbr import rates_from_snapshot
 from services.rates.formatter import DEFAULT_RATE_ORDER, format_cbr_rates
 from services.rates.market import MARKET_RATE_ORDER, MarketRateProviderError
 from services.rates.market.formatter import format_market_rates
+from services.rates.spread import SPREAD_RATE_ORDER, calculate_spread, format_spread_message
 
 logger = logging.getLogger(__name__)
 router = Router(name="rates")
 
 CBR_DATE_STATE = "awaiting_cbr_date"
 user_state: dict[int, str] = {}
+CBR_SPREAD_UNAVAILABLE_TEXT = "Курс ЦБ РФ временно недоступен.\nПопробуйте позже."
 
 
 class AwaitingCbrDate(Filter):
@@ -43,6 +45,15 @@ def cbr_after_rates_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🗓 Выбрать другую дату", callback_data="cbr:choose_date")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
+        ]
+    )
+
+
+def spread_after_rates_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить спред", callback_data="spread:refresh")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")],
         ]
     )
@@ -185,6 +196,59 @@ async def show_investing_rates_button(message: Message, market_rate_provider) ->
         return
 
     await message.answer(format_market_rates(rates, MARKET_RATE_ORDER), parse_mode="HTML")
+
+
+async def answer_spread(
+    message: Message,
+    cbr_service: CBRService,
+    app_config: Settings,
+    market_rate_provider,
+) -> None:
+    timezone = ZoneInfo(app_config.timezone)
+    fetched_at = datetime.now(timezone)
+    try:
+        snapshot = await cbr_service.fetch_rates(fetched_at.date())
+    except CBRServiceError:
+        logger.exception("Could not fetch CBR rates for spread")
+        await message.answer(CBR_SPREAD_UNAVAILABLE_TEXT)
+        return
+
+    try:
+        market_rates = await market_rate_provider.get_rates(list(SPREAD_RATE_ORDER))
+    except MarketRateProviderError as exc:
+        logger.exception("Could not fetch market rates for spread")
+        await message.answer(str(exc))
+        return
+
+    cbr_rates = rates_from_snapshot(snapshot, fetched_at=fetched_at, source="CBR")
+    spreads = calculate_spread(cbr_rates, market_rates, SPREAD_RATE_ORDER)
+    await message.answer(
+        format_spread_message(spreads),
+        reply_markup=spread_after_rates_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.text == SPREAD_BUTTON)
+async def show_spread_button(
+    message: Message,
+    cbr_service: CBRService,
+    app_config: Settings,
+    market_rate_provider,
+) -> None:
+    await answer_spread(message, cbr_service, app_config, market_rate_provider)
+
+
+@router.callback_query(F.data == "spread:refresh")
+async def refresh_spread(
+    callback: CallbackQuery,
+    cbr_service: CBRService,
+    app_config: Settings,
+    market_rate_provider,
+) -> None:
+    await callback.answer()
+    if callback.message is not None and hasattr(callback.message, "answer"):
+        await answer_spread(callback.message, cbr_service, app_config, market_rate_provider)
 
 
 @router.message(Command("rates"))

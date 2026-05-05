@@ -211,6 +211,10 @@ def test_format_client_calculation_text_to_rub_with_percent_uses_rate_label() ->
         "\n"
         "Итого: 763 782,12 ₽"
     )
+    assert "Сумма: 10 000 USD" in formatted
+    assert "Сумма:10 000 USD" not in formatted
+    assert "Ставка: +2%" in formatted
+    assert "Ставка:+2%" not in formatted
     assert "Корректировка" not in formatted
 
 
@@ -233,6 +237,7 @@ def test_format_client_calculation_text_without_percent_omits_rate_lines() -> No
     assert "Ставка" not in formatted
     assert "Расчётный курс" not in formatted
     assert "Корректировка" not in formatted
+    assert "Итого: 748 806,00 ₽" in formatted
 
 
 def test_format_client_calculation_text_from_rub_with_percent() -> None:

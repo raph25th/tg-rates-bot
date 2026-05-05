@@ -90,7 +90,7 @@ def format_cbr_update_notification(snapshot) -> str:
         rate = snapshot.rates.get(code)
         if rate is None:
             continue
-        lines.extend(["", f"{rate.code}:", f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽"])
+        lines.extend(["", f"{rate.code}:", f"1 {rate.code} = {format_rate(rate.unit_rate)}"])
     return "\n".join(lines)
 
 

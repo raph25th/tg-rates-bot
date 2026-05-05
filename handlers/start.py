@@ -11,6 +11,7 @@ CBR_RATES_BUTTON = "📊 Курс ЦБ РФ"
 INVESTING_RATES_BUTTON = "📈 Рыночный курс"
 CBR_CALC_BUTTON = "🧮 Расчёт по ЦБ РФ"
 INVESTING_CALC_BUTTON = "💱 Расчёт по рынку"
+SPREAD_BUTTON = "📉 Спред"
 CBR_NOTIFICATIONS_BUTTON = "🔔 Уведомления ЦБ"
 CAPABILITIES_BUTTON = "❓ Что умеет бот"
 
@@ -20,7 +21,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text=CBR_RATES_BUTTON), KeyboardButton(text=INVESTING_RATES_BUTTON)],
             [KeyboardButton(text=CBR_CALC_BUTTON), KeyboardButton(text=INVESTING_CALC_BUTTON)],
-            [KeyboardButton(text=CBR_NOTIFICATIONS_BUTTON)],
+            [KeyboardButton(text=SPREAD_BUTTON), KeyboardButton(text=CBR_NOTIFICATIONS_BUTTON)],
             [KeyboardButton(text=CAPABILITIES_BUTTON)],
         ],
         resize_keyboard=True,

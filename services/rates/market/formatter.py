@@ -28,7 +28,7 @@ def format_market_rates(rates: dict[str, MarketRate], codes: Iterable[str] = MAR
                 "",
                 format_html_rate_block(
                     f"{rate.pair} — {currency_display_name(rate.code)}",
-                    f"1 {rate.code} = {format_rate(rate.value)} ₽",
+                    f"1 {rate.code} = {format_rate(rate.value)}",
                 ),
             ]
         )

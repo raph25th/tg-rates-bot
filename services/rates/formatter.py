@@ -25,7 +25,7 @@ def format_cbr_rates(rates: dict[str, Rate], codes: Iterable[str] = DEFAULT_RATE
                 "",
                 format_html_rate_block(
                     f"{rate.code}/RUB — {currency_display_name(rate.code, rate.name)}",
-                    f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+                    f"1 {rate.code} = {format_rate(rate.unit_rate)}",
                 ),
             ]
         )
