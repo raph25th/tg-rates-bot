@@ -63,12 +63,38 @@ def test_format_cbr_rates_button_output() -> None:
     assert format_cbr_rates(rates, ("USD", "EUR")) == (
         "📊 Курсы ЦБ РФ на 30.04.2026\n"
         "\n"
-        "USD:\n"
-        "1 USD = 74,8806 ₽\n"
+        "<code>USD/RUB — Доллар США\n"
+        "1 USD = 74,8806 ₽</code>\n"
         "\n"
-        "EUR:\n"
-        "1 EUR = 85,3200 ₽"
+        "<code>EUR/RUB — Евро\n"
+        "1 EUR = 85,3200 ₽</code>"
     )
+
+
+def test_format_cbr_rates_uses_fixed_display_names() -> None:
+    rate_date = date(2026, 5, 5)
+    fetched_at = datetime(2026, 5, 5, 14, 35)
+    rates = {
+        "CNY": Rate("CNY", "Юань", 1, Decimal("11.0343"), Decimal("11.0343"), rate_date, "CBR", fetched_at),
+        "THB": Rate("THB", "Таиландский бат", 1, Decimal("2.3021"), Decimal("2.3021"), rate_date, "CBR", fetched_at),
+        "KRW": Rate("KRW", "Вона Республики Корея", 1, Decimal("0.0508"), Decimal("0.0508"), rate_date, "CBR", fetched_at),
+    }
+
+    message = format_cbr_rates(rates, ("CNY", "THB", "KRW"))
+
+    assert "<code>CNY/RUB — Китайский юань\n1 CNY = 11,0343 ₽</code>" in message
+    assert "<code>THB/RUB — Тайский бат\n1 THB = 2,3021 ₽</code>" in message
+    assert "<code>KRW/RUB — Южнокорейская вона\n1 KRW = 0,0508 ₽</code>" in message
+
+
+def test_format_cbr_rates_escapes_html_in_rate_blocks() -> None:
+    rate_date = date(2026, 5, 5)
+    fetched_at = datetime(2026, 5, 5, 14, 35)
+    rates = {
+        "XXX": Rate("XXX", "A&B <test>", 1, Decimal("1.2345"), Decimal("1.2345"), rate_date, "CBR", fetched_at),
+    }
+
+    assert "<code>XXX/RUB — A&amp;B &lt;test&gt;\n1 XXX = 1,2345 ₽</code>" in format_cbr_rates(rates, ("XXX",))
 
 
 def test_investing_rates_unavailable_message() -> None:

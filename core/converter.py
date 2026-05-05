@@ -184,5 +184,30 @@ def format_calculator_result(result: ConversionResult) -> str:
     return "\n".join(lines)
 
 
+def format_client_calculation_text(result: ConversionResult) -> str:
+    request = result.request
+    rate = result.rate
+    title = "Расчёт валюты:" if request.direction == "rub_to_currency" else "Расчёт стоимости:"
+    lines = [
+        title,
+        "",
+        f"Сумма: {format_input_amount(request)}",
+        f"Актуальный курс: 1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+    ]
+
+    if request.percent is not None:
+        lines.append(f"Ставка: {format_percent(request.percent)}")
+        if result.adjusted_unit_rate != rate.unit_rate:
+            lines.append(f"Расчётный курс: 1 {rate.code} = {format_rate(result.adjusted_unit_rate)} ₽")
+
+    lines.extend(
+        [
+            "",
+            f"Итого: {format_currency_amount(result.result, request.to_code)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def format_conversion(amount: Decimal, code: str, result_rub: Decimal) -> str:
     return f"{format_plain_amount(amount)} {code.upper()} = {format_number(result_rub)} RUB"

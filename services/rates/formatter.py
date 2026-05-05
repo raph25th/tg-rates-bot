@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from core.money import format_rate
 from services.rates.base import Rate
+from services.rates.display import currency_display_name, format_html_rate_block
 
 
 DEFAULT_RATE_ORDER: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP", "AED", "THB", "KRW", "JPY")
@@ -22,8 +23,10 @@ def format_cbr_rates(rates: dict[str, Rate], codes: Iterable[str] = DEFAULT_RATE
         lines.extend(
             [
                 "",
-                f"{rate.code}:",
-                f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+                format_html_rate_block(
+                    f"{rate.code}/RUB — {currency_display_name(rate.code, rate.name)}",
+                    f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
+                ),
             ]
         )
     return "\n".join(lines)

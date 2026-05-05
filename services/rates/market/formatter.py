@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from core.converter import MARKET_RATE_NOTICE
 from core.money import format_rate
+from services.rates.display import currency_display_name, format_html_rate_block
 from services.rates.market.base import MARKET_RATE_ORDER, MOCK_MARKET_SOURCE, MOCK_MARKET_WARNING, MarketRate
 
 
@@ -22,5 +23,13 @@ def format_market_rates(rates: dict[str, MarketRate], codes: Iterable[str] = MAR
         rate = rates.get(code)
         if rate is None:
             continue
-        lines.extend(["", f"{rate.pair}:", f"1 {rate.code} = {format_rate(rate.value)} ₽"])
+        lines.extend(
+            [
+                "",
+                format_html_rate_block(
+                    f"{rate.pair} — {currency_display_name(rate.code)}",
+                    f"1 {rate.code} = {format_rate(rate.value)} ₽",
+                ),
+            ]
+        )
     return "\n".join(lines)

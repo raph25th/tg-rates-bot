@@ -111,7 +111,7 @@ async def _answer_cbr_rates(
     if warning and warn_on_fallback:
         text = f"{warning}\n\n{text}"
 
-    await message.answer(text, reply_markup=cbr_after_rates_keyboard())
+    await message.answer(text, reply_markup=cbr_after_rates_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == CBR_RATES_BUTTON)
@@ -184,7 +184,7 @@ async def show_investing_rates_button(message: Message, market_rate_provider) ->
         await message.answer(str(exc))
         return
 
-    await message.answer(format_market_rates(rates, MARKET_RATE_ORDER))
+    await message.answer(format_market_rates(rates, MARKET_RATE_ORDER), parse_mode="HTML")
 
 
 @router.message(Command("rates"))

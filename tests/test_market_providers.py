@@ -51,6 +51,7 @@ async def test_mock_rates_are_marked_as_test_mode() -> None:
 
     assert "📈 Рыночный курс" in message
     assert f"Источник: {MOCK_MARKET_SOURCE}" in message
+    assert "<code>USD/RUB — Доллар США\n1 USD = 75,1200 ₽</code>" in message
     assert MOCK_MARKET_WARNING in message
 
 
@@ -71,7 +72,26 @@ def test_yahoo_market_rates_show_orientation_notice() -> None:
     )
 
     assert "Источник: Yahoo Finance — рыночный ориентир" in message
+    assert "<code>USD/RUB — Доллар США\n1 USD = 80,0000 ₽</code>" in message
     assert MARKET_RATE_NOTICE in message
+
+
+def test_market_rates_use_display_names() -> None:
+    from services.rates.market.base import MarketRate
+
+    fetched_at = datetime(2026, 4, 30, 14, 35)
+    message = format_market_rates(
+        {
+            "EUR": MarketRate("EUR", "EUR/RUB", Decimal("87.8310"), YAHOO_MARKET_SOURCE, fetched_at),
+            "THB": MarketRate("THB", "THB/RUB", Decimal("2.3021"), YAHOO_MARKET_SOURCE, fetched_at),
+            "KRW": MarketRate("KRW", "KRW/RUB", Decimal("0.0508"), YAHOO_MARKET_SOURCE, fetched_at),
+        },
+        ("EUR", "THB", "KRW"),
+    )
+
+    assert "<code>EUR/RUB — Евро\n1 EUR = 87,8310 ₽</code>" in message
+    assert "<code>THB/RUB — Тайский бат\n1 THB = 2,3021 ₽</code>" in message
+    assert "<code>KRW/RUB — Южнокорейская вона\n1 KRW = 0,0508 ₽</code>" in message
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,12 @@ from decimal import Decimal
 
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_rate
-from services.converter import convert_currency, format_calculator_result, parse_convert_request
+from services.converter import (
+    convert_currency,
+    format_calculator_result,
+    format_client_calculation_text,
+    parse_convert_request,
+)
 
 
 def make_snapshot() -> RatesSnapshot:
@@ -186,3 +191,67 @@ def test_format_calculator_result_for_market_source_is_clean() -> None:
     assert "Сформировано через @kurs_rub_bot" not in formatted
     assert "Рыночный курс является ориентиром" not in formatted
     assert "Итого:\n7 488,06 ₽" in formatted
+
+
+def test_format_client_calculation_text_to_rub_with_percent_uses_rate_label() -> None:
+    request = parse_convert_request("10 000 USD в руб +2%")
+    assert request is not None
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert formatted == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,3782 ₽\n"
+        "\n"
+        "Итого: 763 782,12 ₽"
+    )
+    assert "Корректировка" not in formatted
+
+
+def test_format_client_calculation_text_without_percent_omits_rate_lines() -> None:
+    request = parse_convert_request("10 000 USD")
+    assert request is not None
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert formatted == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "\n"
+        "Итого: 748 806,00 ₽"
+    )
+    assert "Ставка" not in formatted
+    assert "Расчётный курс" not in formatted
+    assert "Корректировка" not in formatted
+
+
+def test_format_client_calculation_text_from_rub_with_percent() -> None:
+    request = parse_convert_request("1 000 000 ₽ в usd +2%")
+    assert request is not None
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert formatted.startswith(
+        "Расчёт валюты:\n"
+        "\n"
+        "Сумма: 1 000 000 ₽\n"
+        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,3782 ₽\n"
+        "\n"
+        "Итого: "
+    )
+    assert formatted.endswith(" USD")
+    assert "Корректировка" not in formatted
