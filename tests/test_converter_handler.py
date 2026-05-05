@@ -10,16 +10,18 @@ def test_capabilities_hint_covers_supported_examples() -> None:
     hint = get_capabilities_hint()
 
     assert "❓ Что умеет бот" in hint
-    assert "• считать по официальному курсу ЦБ РФ" in hint
-    assert "• считать по рыночному курсу, если источник подключён" in hint
-    assert "• применять процентную корректировку к курсу" in hint
-    assert "• считать валюту в рубли и рубли в валюту" in hint
-    assert "• 100 usd" in hint
-    assert "• 10 000 aed +2%" in hint
-    assert "• 1 000 000 rub в usd" in hint
-    assert "• 10 000 usd в руб -1,5%" in hint
+    assert "Бот помогает быстро считать валюту по официальному курсу ЦБ РФ и рыночному ориентиру." in hint
+    assert "📊 Курс ЦБ РФ" in hint
+    assert "Официальный курс Банка России. Обновляется один раз в день." in hint
+    assert "📈 Рыночный курс" in hint
+    assert "Ориентировочный курс в моменте по данным Yahoo Finance." in hint
+    assert "🧮 Расчёт по ЦБ РФ" in hint
+    assert "💱 Расчёт по рынку" in hint
+    assert "100 usd" in hint
+    assert "10 000 aed +2%" in hint
+    assert "1 000 000 rub в usd" in hint
+    assert "10 000 usd в руб -1,5%" in hint
     assert "USD, EUR, CNY, GBP, AED, THB, KRW, JPY" in hint
-    assert "56 548 468 рублей в USD" in hint
 
 
 def test_new_calculation_hint_is_short() -> None:

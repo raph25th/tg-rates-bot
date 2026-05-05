@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from config import Settings
+from core.converter import MARKET_RATE_NOTICE
 from handlers.converter import market_rate_to_snapshot
 from services.converter import convert_currency, parse_convert_request
 from services.rates.market import MARKET_RATE_ORDER, MarketRateProviderError, build_market_rate_provider
@@ -36,6 +37,7 @@ def test_factory_selects_yahoo_provider() -> None:
     provider = build_market_rate_provider(make_settings(market_rate_provider="yahoo"))
 
     assert provider.source == YAHOO_MARKET_SOURCE
+    assert YAHOO_MARKET_SOURCE == "Yahoo Finance — рыночный ориентир"
     assert isinstance(provider.provider, YahooMarketRateProvider)
     assert not isinstance(provider.provider, MockMarketRateProvider)
 
@@ -50,6 +52,26 @@ async def test_mock_rates_are_marked_as_test_mode() -> None:
     assert "📈 Рыночный курс" in message
     assert f"Источник: {MOCK_MARKET_SOURCE}" in message
     assert MOCK_MARKET_WARNING in message
+
+
+def test_yahoo_market_rates_show_orientation_notice() -> None:
+    from services.rates.market.base import MarketRate
+
+    message = format_market_rates(
+        {
+            "USD": MarketRate(
+                code="USD",
+                pair="USD/RUB",
+                value=Decimal("80.0000"),
+                source=YAHOO_MARKET_SOURCE,
+                fetched_at=datetime(2026, 4, 30, 14, 35),
+            )
+        },
+        ("USD",),
+    )
+
+    assert "Источник: Yahoo Finance — рыночный ориентир" in message
+    assert MARKET_RATE_NOTICE in message
 
 
 @pytest.mark.asyncio

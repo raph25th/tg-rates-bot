@@ -31,9 +31,24 @@ async def start_handler(message: Message) -> None:
     user_id = message.from_user.id if message.from_user else "unknown"
     logger.info("Received /start from %s", user_id)
     await message.answer(
-        "Бот работает 🚀\n\n"
-        "Выберите действие в меню или просто напишите сумму и валюту:\n"
-        "100 usd",
+        "Привет 👋\n"
+        "\n"
+        "Я помогу быстро посчитать валюту в рублях и обратно.\n"
+        "\n"
+        "Что можно делать:\n"
+        "• смотреть официальный курс ЦБ РФ\n"
+        "• смотреть рыночный курс в моменте\n"
+        "• пересчитывать суммы в рубли\n"
+        "• пересчитывать рубли в валюту\n"
+        "• добавлять процент к курсу: +2%, -1,5%\n"
+        "\n"
+        "Примеры:\n"
+        "100 usd\n"
+        "10 000 eur +2%\n"
+        "1 000 000 rub в usd\n"
+        "56 548 468 рублей в USD\n"
+        "\n"
+        "Выберите действие 👇",
         reply_markup=main_menu_keyboard(),
     )
 

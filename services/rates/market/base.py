@@ -9,7 +9,7 @@ MARKET_RATE_ORDER: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP", "AED", "THB", 
 SUPPORTED_MARKET_PAIRS: dict[str, str] = {code: f"{code}/RUB" for code in MARKET_RATE_ORDER}
 MARKET_UNAVAILABLE_TEXT = "Рыночные курсы временно недоступны.\nПопробуйте позже или используйте курс ЦБ РФ."
 INVESTING_UNAVAILABLE_TEXT = MARKET_UNAVAILABLE_TEXT
-YAHOO_MARKET_SOURCE = "Yahoo Finance / рыночный ориентир"
+YAHOO_MARKET_SOURCE = "Yahoo Finance — рыночный ориентир"
 MOCK_MARKET_SOURCE = "Mock Market / тестовый режим"
 MOCK_MARKET_WARNING = (
     "⚠️ Тестовый режим\n"

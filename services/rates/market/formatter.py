@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from core.converter import MARKET_RATE_NOTICE
 from core.money import format_rate
 from services.rates.market.base import MARKET_RATE_ORDER, MOCK_MARKET_SOURCE, MOCK_MARKET_WARNING, MarketRate
 
@@ -12,6 +13,8 @@ def format_market_rates(rates: dict[str, MarketRate], codes: Iterable[str] = MAR
         return "Рыночные курсы временно недоступны.\nПопробуйте позже или используйте курс ЦБ РФ."
 
     lines = ["📈 Рыночный курс", "", f"Источник: {first_rate.source}"]
+    if "рыночный ориентир" in first_rate.source.lower():
+        lines.extend(["", MARKET_RATE_NOTICE])
     if first_rate.source == MOCK_MARKET_SOURCE:
         lines.extend(["", MOCK_MARKET_WARNING])
     lines.extend(["", f"Обновлено: {first_rate.fetched_at.strftime('%H:%M')} МСК"])

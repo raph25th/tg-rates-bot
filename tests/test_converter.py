@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+from core.converter import MARKET_RATE_NOTICE
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_rate
 from services.converter import convert_currency, format_calculator_result, parse_convert_request
@@ -32,7 +33,7 @@ def test_convert_currency_to_rub() -> None:
     request = parse_convert_request("10000 usd")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.result == Decimal("748806.0000")
@@ -42,7 +43,7 @@ def test_convert_currency_to_rub_with_percent_and_direction_word() -> None:
     request = parse_convert_request("10 000 usd в руб +2%")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.adjusted_unit_rate == Decimal("76.378212")
@@ -53,7 +54,7 @@ def test_convert_rub_to_currency() -> None:
     request = parse_convert_request("56 548 468 рублей в usd")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.result.quantize(Decimal("0.01")) == Decimal("755181.82")
@@ -63,7 +64,7 @@ def test_convert_rub_to_currency_with_negative_percent() -> None:
     request = parse_convert_request("56548468 rub в usd -1.5%")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.adjusted_unit_rate == Decimal("73.7573910")
@@ -74,7 +75,7 @@ def test_convert_aed_to_rub_with_percent() -> None:
     request = parse_convert_request("10000 aed в руб +3%")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.adjusted_unit_rate == Decimal("21.182568")
@@ -85,7 +86,7 @@ def test_convert_krw_uses_unit_rate_not_nominal_value() -> None:
     request = parse_convert_request("1000000 krw")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.rate.nominal == 1000
@@ -98,7 +99,7 @@ def test_convert_jpy_uses_unit_rate_not_nominal_value() -> None:
     request = parse_convert_request("500000 jpy")
     assert request is not None
 
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
 
     assert result is not None
     assert result.rate.nominal == 100
@@ -110,14 +111,14 @@ def test_convert_jpy_uses_unit_rate_not_nominal_value() -> None:
 def test_format_calculator_result_to_rub_with_percent() -> None:
     request = parse_convert_request("10 000 USD в руб +2%")
     assert request is not None
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
     assert result is not None
 
     assert format_calculator_result(result) == (
         "💱 Расчёт валюты\n"
         "\n"
         "Источник:\n"
-        "ЦБ РФ\n"
+        "ЦБ РФ — официальный курс\n"
         "\n"
         "Сумма:\n"
         "10 000 USD\n"
@@ -131,7 +132,7 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
         "Расчётный курс:\n"
         "1 USD = 76,3782 ₽\n"
         "\n"
-        "Итого к оплате:\n"
+        "Итого:\n"
         "763 782,12 ₽\n"
         "\n"
         "Дата курса:\n"
@@ -145,14 +146,14 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
 def test_format_calculator_result_from_rub() -> None:
     request = parse_convert_request("1 000 000 ₽ в eur")
     assert request is not None
-    result = convert_currency(request, make_snapshot(), source="ЦБ РФ")
+    result = convert_currency(request, make_snapshot(), source="ЦБ РФ — официальный курс")
     assert result is not None
 
     assert format_calculator_result(result) == (
         "💱 Расчёт валюты\n"
         "\n"
         "Источник:\n"
-        "ЦБ РФ\n"
+        "ЦБ РФ — официальный курс\n"
         "\n"
         "Сумма:\n"
         "1 000 000 ₽\n"
@@ -169,3 +170,16 @@ def test_format_calculator_result_from_rub() -> None:
         "—\n"
         "Сформировано через @kurs_rub_bot"
     )
+
+
+def test_format_calculator_result_for_market_source_has_notice() -> None:
+    request = parse_convert_request("100 USD")
+    assert request is not None
+    result = convert_currency(request, make_snapshot(), source="Yahoo Finance — рыночный ориентир")
+    assert result is not None
+
+    formatted = format_calculator_result(result)
+
+    assert "Источник:\nYahoo Finance — рыночный ориентир" in formatted
+    assert MARKET_RATE_NOTICE in formatted
+    assert "Итого:\n7 488,06 ₽" in formatted

@@ -16,6 +16,8 @@ from services.conversion_parser import (
 )
 
 SUPPORTED_CALCULATOR_CURRENCIES = SUPPORTED_CURRENCIES
+DEFAULT_CBR_SOURCE = "ЦБ РФ — официальный курс"
+MARKET_RATE_NOTICE = "Рыночный курс является ориентиром и может отличаться от банков, обменников и торговых платформ."
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ class ConversionResult:
     result: Decimal
     rate: CurrencyRate
     adjusted_unit_rate: Decimal
-    source: str = "ЦБ РФ"
+    source: str = DEFAULT_CBR_SOURCE
 
     @property
     def result_rub(self) -> Decimal:
@@ -86,7 +88,7 @@ def apply_percent(unit_rate: Decimal, percent: Decimal | None) -> Decimal:
 def convert_currency(
     request: ConvertRequest,
     snapshot: RatesSnapshot,
-    source: str = "ЦБ РФ",
+    source: str = DEFAULT_CBR_SOURCE,
 ) -> ConversionResult | None:
     if request.direction == "rub_to_currency":
         rate = snapshot.rates.get(request.to_code)
@@ -145,13 +147,21 @@ def format_calculator_result(result: ConversionResult) -> str:
         "",
         "Источник:",
         result.source,
+    ]
+
+    if "рыночный ориентир" in result.source.lower():
+        lines.extend(["", MARKET_RATE_NOTICE])
+
+    lines.extend(
+        [
         "",
         "Сумма:",
         format_input_amount(request),
         "",
         "Курс:",
         f"1 {rate.code} = {format_rate(rate.unit_rate)} ₽",
-    ]
+        ]
+    )
 
     if request.percent is not None:
         lines.extend(
@@ -165,7 +175,7 @@ def format_calculator_result(result: ConversionResult) -> str:
             ]
         )
 
-    total_title = "Итого к оплате:" if request.direction == "currency_to_rub" else "Итого:"
+    total_title = "Итого:"
     lines.extend(
         [
             "",
