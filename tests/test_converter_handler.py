@@ -37,6 +37,8 @@ def test_capabilities_hint_covers_supported_examples() -> None:
     assert "10 000 aed +2%" in hint
     assert "1 000 000 rub в usd" in hint
     assert "10 000 usd в руб -1,5%" in hint
+    assert "50 200 CNY +2% +200ПП" in hint
+    assert "Доп. платёж всегда считается в USD по тому же источнику курса и с той же ставкой." in hint
     assert "Можно писать как код валюты, так и словами:" in hint
     assert "10 000 долларов" in hint
     assert "1 000 000 рублей в евро" in hint
@@ -51,6 +53,7 @@ def test_new_calculation_hint_is_short() -> None:
     assert "10 000 usd +2%" in hint
     assert "1 000 000 rub в usd" in hint
     assert "10 000 usd +2% +100ПП" in hint
+    assert "50 200 CNY +2% +200ПП" in hint
     assert "Больше возможностей — в разделе:" in hint
     assert "❓ Что умеет бот" in hint
 
@@ -82,6 +85,7 @@ class FakeCbrService:
             date=rate_date,
             rates={
                 "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+                "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("10.9500"), Decimal("10.9500"), rate_date),
             },
         )
 
@@ -95,6 +99,22 @@ class FakeMarketProvider:
             source="Yahoo Finance — рыночный ориентир",
             fetched_at=datetime(2026, 5, 5, 12, 0),
         )
+
+    async def get_rates(self, codes: list[str]):
+        values = {
+            "USD": Decimal("74.8850"),
+            "CNY": Decimal("10.9672"),
+        }
+        return {
+            code: MarketRate(
+                code=code,
+                pair=f"{code}/RUB",
+                value=values[code],
+                source="Yahoo Finance — рыночный ориентир",
+                fetched_at=datetime(2026, 5, 5, 12, 0),
+            )
+            for code in codes
+        }
 
 
 class FakeMessage:
@@ -148,36 +168,38 @@ async def test_successful_calculation_uses_client_format_and_two_buttons() -> No
 @pytest.mark.asyncio
 async def test_market_calculation_uses_same_client_format_with_extra_payment() -> None:
     user_rate_source[1001] = MARKET_SOURCE
-    message = FakeMessage("10000 usd +2% +100ПП")
+    message = FakeMessage("50200 CNY +2% +200ПП")
 
-    await convert_currency_handler(
-        message,
-        cbr_service=FakeCbrService(),
-        app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
-        market_rate_provider=FakeMarketProvider(),
-    )
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=FakeCbrService(),
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=FakeMarketProvider(),
+        )
 
-    text, keyboard = message.answers[0]
-    assert text == (
-        "Расчёт стоимости:\n"
-        "\n"
-        "Сумма: 10 000 USD\n"
-        "Актуальный курс: 1 USD = 74,8850 RUB\n"
-        "Ставка: +2%\n"
-        "Расчётный курс: 1 USD = 76,3827 RUB\n"
-        "\n"
-        "Основной платёж:\n"
-        "10 000 USD = 763 827,00 RUB\n"
-        "\n"
-        "Доп. платёж:\n"
-        "100 USD = 7 638,27 RUB\n"
-        "\n"
-        "Итого:\n"
-        "763 827,00 RUB + 7 638,27 RUB = 771 465,27 RUB"
-    )
-    assert "Источник:" not in text
-    assert "Yahoo Finance" not in text
-    assert "💱 Расчёт по рыночному курсу" not in text
-    assert "💱 Расчёт по курсу ЦБ РФ" not in text
-    assert "📋 Текст для клиента" not in [button.text for row in keyboard.inline_keyboard for button in row]
-    user_rate_source.pop(1001, None)
+        text, keyboard = message.answers[0]
+        assert text == (
+            "Расчёт стоимости:\n"
+            "\n"
+            "Сумма: 50 200 CNY\n"
+            "Актуальный курс: 1 CNY = 10,9672 RUB\n"
+            "Ставка: +2%\n"
+            "Расчётный курс: 1 CNY = 11,1865 RUB\n"
+            "\n"
+            "Основной платёж:\n"
+            "50 200 CNY = 561 564,51 RUB\n"
+            "\n"
+            "Доп. платёж:\n"
+            "200 USD × 76,3827 RUB = 15 276,54 RUB\n"
+            "\n"
+            "Итого:\n"
+            "561 564,51 RUB + 15 276,54 RUB = 576 841,05 RUB"
+        )
+        assert "Источник:" not in text
+        assert "Yahoo Finance" not in text
+        assert "💱 Расчёт по рыночному курсу" not in text
+        assert "💱 Расчёт по курсу ЦБ РФ" not in text
+        assert "📋 Текст для клиента" not in [button.text for row in keyboard.inline_keyboard for button in row]
+    finally:
+        user_rate_source.pop(1001, None)

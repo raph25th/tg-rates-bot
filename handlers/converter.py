@@ -57,6 +57,25 @@ def market_rate_to_snapshot(rate: MarketRate) -> RatesSnapshot:
     return RatesSnapshot(date=rate_date, rates={rate.code: currency_rate})
 
 
+def market_rates_to_snapshot(rates: dict[str, MarketRate]) -> RatesSnapshot:
+    first_rate = next(iter(rates.values()))
+    rate_date = first_rate.fetched_at.date()
+    return RatesSnapshot(
+        date=rate_date,
+        rates={
+            rate.code: CurrencyRate(
+                code=rate.code,
+                name=rate.pair,
+                nominal=1,
+                value=rate.value,
+                unit_rate=rate.value,
+                date=rate.fetched_at.date(),
+            )
+            for rate in rates.values()
+        },
+    )
+
+
 def get_capabilities_hint() -> str:
     return (
         "❓ Что умеет бот\n"
@@ -99,11 +118,10 @@ def get_capabilities_hint() -> str:
         "1 000 000 rub в usd +2%\n"
         "\n"
         "С доп. платежом:\n"
-        "10 000 usd +2% +100ПП\n"
-        "10 000 usd +2% +100$\n"
-        "10 000 usd +2% +100\n"
+        "10 000 USD +2% +100ПП\n"
+        "50 200 CNY +2% +200ПП\n"
         "\n"
-        "Доп. платёж считается по расчётному курсу с учётом ставки.\n"
+        "Доп. платёж всегда считается в USD по тому же источнику курса и с той же ставкой.\n"
         "\n"
         "Можно писать как код валюты, так и словами:\n"
         "10 000 usd\n"
@@ -125,6 +143,7 @@ def get_new_calculation_hint() -> str:
         "10 000 usd +2%\n"
         "1 000 000 rub в usd\n"
         "10 000 usd +2% +100ПП\n"
+        "50 200 CNY +2% +200ПП\n"
         "\n"
         "Больше возможностей — в разделе:\n"
         "❓ Что умеет бот"
@@ -246,7 +265,13 @@ async def convert_currency(
     if active_source == MARKET_SOURCE:
         rate_code = request.to_code if request.direction == "rub_to_currency" else request.from_code
         try:
-            market_rate = await market_rate_provider.get_rate(rate_code)
+            if request.extra_payment_amount is not None:
+                rate_codes = list(dict.fromkeys([rate_code, "USD"]))
+                market_rates = await market_rate_provider.get_rates(rate_codes)
+                market_snapshot = market_rates_to_snapshot(market_rates)
+            else:
+                market_rate = await market_rate_provider.get_rate(rate_code)
+                market_snapshot = market_rate_to_snapshot(market_rate)
         except PairUnavailableError as exc:
             await message.answer(str(exc))
             return
@@ -255,7 +280,7 @@ async def convert_currency(
             await message.answer(str(exc))
             return
 
-        result = calculate_conversion(request, market_rate_to_snapshot(market_rate), source=market_rate.source)
+        result = calculate_conversion(request, market_snapshot, source=MARKET_SOURCE)
         if result is None:
             await message.answer(f"Пара {rate_code}/RUB временно недоступна в рыночном источнике.")
             return

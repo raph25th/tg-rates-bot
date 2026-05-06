@@ -76,6 +76,32 @@ def test_convert_currency_to_rub_with_extra_payment_and_percent() -> None:
     assert result.result == Decimal("772650.000000")
 
 
+def test_convert_currency_to_rub_with_extra_payment_in_usd_for_non_usd_currency() -> None:
+    rate_date = date(2026, 5, 5)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+            "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("10.9500"), Decimal("10.9500"), rate_date),
+        },
+    )
+    request = parse_convert_request("50200 cny +2% +200ПП")
+    assert request is not None
+
+    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
+
+    assert result is not None
+    assert result.adjusted_unit_rate == Decimal("11.169000")
+    assert result.adjusted_extra_payment_unit_rate == Decimal("76.500000")
+    assert result.main_payment_rub == Decimal("560683.800000")
+    assert result.extra_payment_amount == Decimal("200")
+    assert result.extra_payment_rate is not None
+    assert result.extra_payment_rate.code == "USD"
+    assert result.extra_payment_rub == Decimal("15300.000000")
+    assert result.final_result == Decimal("575983.800000")
+    assert result.result == Decimal("575983.800000")
+
+
 def test_convert_rub_to_currency() -> None:
     request = parse_convert_request("56 548 468 рублей в usd")
     assert request is not None
@@ -303,6 +329,44 @@ def test_format_client_calculation_text_with_extra_payment() -> None:
     assert "Платёжка" not in formatted
     assert "Корректировка" not in formatted
     assert "₽" not in formatted
+
+
+def test_format_client_calculation_text_with_extra_payment_in_usd_for_non_usd_currency() -> None:
+    rate_date = date(2026, 5, 5)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+            "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("10.9500"), Decimal("10.9500"), rate_date),
+        },
+    )
+    request = parse_convert_request("50200 CNY +2% +200ПП")
+    assert request is not None
+    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert formatted == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 50 200 CNY\n"
+        "Актуальный курс: 1 CNY = 10,9500 RUB\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 CNY = 11,1690 RUB\n"
+        "\n"
+        "Основной платёж:\n"
+        "50 200 CNY = 560 683,80 RUB\n"
+        "\n"
+        "Доп. платёж:\n"
+        "200 USD × 76,5000 RUB = 15 300,00 RUB\n"
+        "\n"
+        "Итого:\n"
+        "560 683,80 RUB + 15 300,00 RUB = 575 983,80 RUB"
+    )
+    assert "Доп. платёж" in formatted
+    assert "ПП" not in formatted
+    assert "Платёжка" not in formatted
 
 
 def test_format_client_calculation_text_with_extra_payment_without_percent() -> None:

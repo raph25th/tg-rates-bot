@@ -46,6 +46,8 @@ class ConversionResult:
     adjusted_unit_rate: Decimal
     main_payment_rub: Decimal | None = None
     extra_payment_amount: Decimal | None = None
+    extra_payment_rate: CurrencyRate | None = None
+    adjusted_extra_payment_unit_rate: Decimal | None = None
     extra_payment_rub: Decimal | None = None
     final_result: Decimal | None = None
     source: str = DEFAULT_CBR_SOURCE
@@ -118,10 +120,23 @@ def convert_currency(
     if rate is None:
         return None
 
+    extra_payment_rate = snapshot.rates.get("USD") if request.extra_payment_amount is not None else None
+    if request.extra_payment_amount is not None and extra_payment_rate is None:
+        return None
+
     adjusted_rate = apply_percent(rate.unit_rate, request.percent)
     main_payment_rub = request.amount * adjusted_rate
     extra_payment_amount = request.extra_payment_amount
-    extra_payment_rub = extra_payment_amount * adjusted_rate if extra_payment_amount is not None else None
+    adjusted_extra_payment_rate = (
+        apply_percent(extra_payment_rate.unit_rate, request.percent)
+        if extra_payment_rate is not None
+        else None
+    )
+    extra_payment_rub = (
+        extra_payment_amount * adjusted_extra_payment_rate
+        if extra_payment_amount is not None and adjusted_extra_payment_rate is not None
+        else None
+    )
     final_result = main_payment_rub + (extra_payment_rub or Decimal("0"))
     return ConversionResult(
         request=request,
@@ -130,6 +145,8 @@ def convert_currency(
         adjusted_unit_rate=adjusted_rate,
         main_payment_rub=main_payment_rub,
         extra_payment_amount=extra_payment_amount,
+        extra_payment_rate=extra_payment_rate,
+        adjusted_extra_payment_unit_rate=adjusted_extra_payment_rate,
         extra_payment_rub=extra_payment_rub,
         final_result=final_result,
         source=source,
@@ -160,7 +177,7 @@ def format_input_amount(request: ConvertRequest) -> str:
 
 def format_extra_payment_amount(result: ConversionResult) -> str:
     amount = result.extra_payment_amount or Decimal("0")
-    return f"{format_plain_amount(amount)} {result.rate.code}"
+    return f"{format_plain_amount(amount)} USD"
 
 
 def has_extra_payment(result: ConversionResult) -> bool:
@@ -195,6 +212,12 @@ def format_client_calculation_text(result: ConversionResult) -> str:
     if has_extra_payment(result):
         main_payment = result.main_payment_rub or Decimal("0")
         extra_payment = result.extra_payment_rub or Decimal("0")
+        extra_payment_line = f"{format_extra_payment_amount(result)} = {format_rub(extra_payment)}"
+        if result.rate.code != "USD" and result.adjusted_extra_payment_unit_rate is not None:
+            extra_payment_line = (
+                f"{format_extra_payment_amount(result)} × "
+                f"{format_rate(result.adjusted_extra_payment_unit_rate)} RUB = {format_rub(extra_payment)}"
+            )
         lines.extend(
             [
                 "",
@@ -202,7 +225,7 @@ def format_client_calculation_text(result: ConversionResult) -> str:
                 f"{format_input_amount(request)} = {format_rub(main_payment)}",
                 "",
                 "Доп. платёж:",
-                f"{format_extra_payment_amount(result)} = {format_rub(extra_payment)}",
+                extra_payment_line,
                 "",
                 "Итого:",
                 f"{format_rub(main_payment)} + {format_rub(extra_payment)} = {format_rub(result.result)}",
