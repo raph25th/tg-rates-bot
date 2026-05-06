@@ -30,7 +30,7 @@ def test_capabilities_hint_covers_supported_examples() -> None:
     assert "🧮 Расчёт по ЦБ РФ" in hint
     assert "💱 Расчёт по рынку" in hint
     assert "📉 Спред" in hint
-    assert "Бот показывает разницу между курсом ЦБ РФ и рыночным курсом для USD, EUR и CNY." in hint
+    assert "Бот показывает разницу между курсом ЦБ РФ и рыночным курсом для USD, AED, CNY и EUR." in hint
     assert "🔔 Уведомления ЦБ" in hint
     assert "Бот может присылать курс ЦБ РФ после его обновления." in hint
     assert "100 usd" in hint

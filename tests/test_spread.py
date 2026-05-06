@@ -23,6 +23,7 @@ def make_snapshot() -> RatesSnapshot:
         date=rate_date,
         rates={
             "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.4388"), Decimal("75.4388"), rate_date),
+            "AED": CurrencyRate("AED", "Дирхам ОАЭ", 1, Decimal("20.5415"), Decimal("20.5415"), rate_date),
             "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.2651"), Decimal("88.2651"), rate_date),
             "CNY": CurrencyRate("CNY", "Юань", 1, Decimal("11.0343"), Decimal("11.0343"), rate_date),
         },
@@ -33,20 +34,24 @@ def make_market_rates() -> dict[str, MarketRate]:
     fetched_at = datetime(2026, 5, 5, 23, 45)
     return {
         "USD": MarketRate("USD", "USD/RUB", Decimal("74.8850"), "Yahoo Finance — рыночный ориентир", fetched_at),
+        "AED": MarketRate("AED", "AED/RUB", Decimal("20.3935"), "Yahoo Finance — рыночный ориентир", fetched_at),
         "EUR": MarketRate("EUR", "EUR/RUB", Decimal("87.8310"), "Yahoo Finance — рыночный ориентир", fetched_at),
         "CNY": MarketRate("CNY", "CNY/RUB", Decimal("10.9672"), "Yahoo Finance — рыночный ориентир", fetched_at),
     }
 
 
-def test_calculate_spread_for_usd_eur_cny() -> None:
+def test_calculate_spread_for_usd_aed_cny_eur_in_expected_order() -> None:
     cbr_rates = rates_from_snapshot(make_snapshot(), fetched_at=datetime(2026, 5, 5, 23, 45))
     spreads = calculate_spread(cbr_rates, make_market_rates())
 
     by_code = {spread.code: spread for spread in spreads}
 
     assert tuple(by_code) == SPREAD_RATE_ORDER
+    assert SPREAD_RATE_ORDER == ("USD", "AED", "CNY", "EUR")
     assert by_code["USD"].difference == Decimal("-0.5538")
     assert by_code["USD"].percent.quantize(Decimal("0.01")) == Decimal("-0.73")
+    assert by_code["AED"].difference == Decimal("-0.1480")
+    assert by_code["AED"].percent.quantize(Decimal("0.01")) == Decimal("-0.72")
     assert by_code["EUR"].difference == Decimal("-0.4341")
     assert by_code["EUR"].percent.quantize(Decimal("0.01")) == Decimal("-0.49")
     assert by_code["CNY"].difference == Decimal("-0.0671")
@@ -65,6 +70,14 @@ def test_format_spread_message_shows_negative_spread_with_minus() -> None:
         "Разница: -0,5538\n"
         "Спред: -0,73%"
     ) in message
+    assert (
+        "AED/RUB — Дирхам ОАЭ\n"
+        "ЦБ РФ: 20,5415\n"
+        "Рынок: 20,3935\n"
+        "Разница: -0,1480\n"
+        "Спред: -0,72%"
+    ) in message
+    assert message.index("USD/RUB") < message.index("AED/RUB") < message.index("CNY/RUB") < message.index("EUR/RUB")
     assert "<code>" not in message
     assert "</code>" not in message
     assert "Обновлено:\n23:45 МСК" in message
@@ -148,7 +161,7 @@ async def test_answer_spread_sends_html_message_with_refresh_button() -> None:
 
     await answer_spread(message, FakeCbrService(), make_settings(), market_provider)
 
-    assert market_provider.requested_codes == ["USD", "EUR", "CNY"]
+    assert market_provider.requested_codes == ["USD", "AED", "CNY", "EUR"]
     assert message.answers[0]["parse_mode"] is None
     assert "📉 Спред ЦБ РФ / рынок" in message.answers[0]["text"]
     assert message.answers[0]["reply_markup"] is not None

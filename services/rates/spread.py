@@ -11,7 +11,7 @@ from services.rates.display import currency_display_name
 from services.rates.market.base import MarketRate
 
 
-SPREAD_RATE_ORDER: tuple[str, ...] = ("USD", "EUR", "CNY")
+SPREAD_RATE_ORDER: tuple[str, ...] = ("USD", "AED", "CNY", "EUR")
 
 
 @dataclass(frozen=True)
@@ -64,11 +64,11 @@ def _format_signed_percent(value: Decimal) -> str:
 def _format_spread_block(spread: SpreadRate) -> str:
     return "\n".join(
         [
-        f"{spread.code}/RUB — {currency_display_name(spread.code)}",
-        f"ЦБ РФ: {format_rate(spread.cbr_rate)}",
-        f"Рынок: {format_rate(spread.market_rate)}",
-        f"Разница: {_format_signed_rate(spread.difference)}",
-        f"Спред: {_format_signed_percent(spread.percent)}%",
+            f"{spread.code}/RUB — {currency_display_name(spread.code)}",
+            f"ЦБ РФ: {format_rate(spread.cbr_rate)}",
+            f"Рынок: {format_rate(spread.market_rate)}",
+            f"Разница: {_format_signed_rate(spread.difference)}",
+            f"Спред: {_format_signed_percent(spread.percent)}%",
         ]
     )
 
