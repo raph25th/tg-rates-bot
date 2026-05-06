@@ -172,61 +172,8 @@ def has_extra_payment(result: ConversionResult) -> bool:
     )
 
 
-def format_calculator_title(source: str) -> str:
-    if "цб" in source.casefold():
-        return "💱 Расчёт по курсу ЦБ РФ"
-    return "💱 Расчёт по рыночному курсу"
-
-
 def format_calculator_result(result: ConversionResult) -> str:
-    request = result.request
-    rate = result.rate
-    lines = [
-        format_calculator_title(result.source),
-        "",
-        "Сумма:",
-        format_input_amount(request),
-        "",
-        "Курс:",
-        f"1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
-    ]
-
-    if request.percent is not None:
-        lines.extend(
-            [
-                "",
-                "Корректировка:",
-                format_percent(request.percent),
-                "",
-                "Расчётный курс:",
-                f"1 {rate.code} = {format_rate(result.adjusted_unit_rate)} RUB",
-            ]
-        )
-
-    if has_extra_payment(result):
-        lines.extend(
-            [
-                "",
-                "Основной платёж:",
-                f"{format_input_amount(request)} = {format_rub(result.main_payment_rub or Decimal('0'))}",
-                "",
-                "Доп. платёж:",
-                f"{format_extra_payment_amount(result)} = {format_rub(result.extra_payment_rub or Decimal('0'))}",
-            ]
-        )
-
-    total_title = "Итого:"
-    lines.extend(
-        [
-            "",
-            total_title,
-            format_currency_amount(result.result, request.to_code),
-            "",
-            "Дата курса:",
-            rate.date.strftime("%d.%m.%Y"),
-        ]
-    )
-    return "\n".join(lines)
+    return format_client_calculation_text(result)
 
 
 def format_client_calculation_text(result: ConversionResult) -> str:

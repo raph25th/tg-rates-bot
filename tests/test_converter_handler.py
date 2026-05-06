@@ -1,20 +1,21 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+from config import Settings
 from core.models import CurrencyRate, RatesSnapshot
+from handlers.converter import convert_currency as convert_currency_handler
 from handlers.converter import (
     INVESTING_CALC_UNAVAILABLE_TEXT,
+    MARKET_SOURCE,
     calculator_result_keyboard,
     get_capabilities_hint,
-    get_client_text_for_user,
     get_new_calculation_hint,
-    last_calculations,
-    show_client_text,
+    user_rate_source,
 )
-from services.converter import convert_currency, parse_convert_request
+from services.rates.market import MarketRate
 
 
 def test_capabilities_hint_covers_supported_examples() -> None:
@@ -49,119 +50,134 @@ def test_new_calculation_hint_is_short() -> None:
     assert "100 usd" in hint
     assert "10 000 usd +2%" in hint
     assert "1 000 000 rub в usd" in hint
+    assert "10 000 usd +2% +100ПП" in hint
     assert "Больше возможностей — в разделе:" in hint
     assert "❓ Что умеет бот" in hint
 
 
-def make_result(text: str = "100 usd +2%"):
-    rate_date = date(2026, 4, 30)
-    snapshot = RatesSnapshot(
-        date=rate_date,
-        rates={
-            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("74.8806"), Decimal("74.8806"), rate_date),
-        },
-    )
-    request = parse_convert_request(text)
-    assert request is not None
-    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
-    assert result is not None
-    return result
-
-
-def test_calculator_result_keyboard_has_client_text_new_calc_and_main_menu() -> None:
+def test_calculator_result_keyboard_has_only_new_calc_and_main_menu() -> None:
     keyboard = calculator_result_keyboard()
     rows = [[(button.text, button.callback_data) for button in row] for row in keyboard.inline_keyboard]
 
     assert rows == [
-        [("📋 Текст для клиента", "calc:client_text")],
         [
             ("🔁 Новый расчёт", "calc:new"),
             ("🏠 Главное меню", "main_menu"),
         ],
     ]
-
-
-def test_client_text_for_user_uses_last_calculation_with_rate_label() -> None:
-    last_calculations.clear()
-    last_calculations[1001] = make_result("100 usd +2%")
-
-    text = get_client_text_for_user(1001)
-
-    assert "Ставка: +2%" in text
-    assert "Корректировка" not in text
-    assert "Источник" not in text
-    assert "Yahoo Finance" not in text
-
-
-def test_client_text_for_user_without_percent_omits_rate_label() -> None:
-    last_calculations.clear()
-    last_calculations[1001] = make_result("100 usd")
-
-    text = get_client_text_for_user(1001)
-
-    assert "Ставка" not in text
-    assert "Расчётный курс" not in text
-    assert "Корректировка" not in text
-
-
-def test_client_text_for_user_without_last_calculation_shows_hint() -> None:
-    last_calculations.clear()
-
-    assert get_client_text_for_user(1001) == (
-        "Сначала выполните расчёт, например:\n"
-        "\n"
-        "100 usd\n"
-        "10 000 usd +2%\n"
-        "1 000 000 rub в usd"
-    )
-
-
-class FakeCallbackMessage:
-    def __init__(self) -> None:
-        self.answers: list[tuple[str, object | None]] = []
-
-    async def answer(self, text: str, reply_markup=None) -> None:
-        self.answers.append((text, reply_markup))
-
-
-class FakeCallback:
-    def __init__(self, user_id: int) -> None:
-        self.from_user = SimpleNamespace(id=user_id)
-        self.message = FakeCallbackMessage()
-        self.answered = False
-
-    async def answer(self) -> None:
-        self.answered = True
-
-
-@pytest.mark.asyncio
-async def test_client_text_callback_sends_client_text_without_keyboard() -> None:
-    last_calculations.clear()
-    last_calculations[1001] = make_result("100 usd +2%")
-    callback = FakeCallback(1001)
-
-    await show_client_text(callback)
-
-    assert callback.answered is True
-    assert len(callback.message.answers) == 1
-    text, reply_markup = callback.message.answers[0]
-    assert "Ставка: +2%" in text
-    assert "Корректировка" not in text
-    assert "Источник" not in text
-    assert reply_markup is None
-
-
-@pytest.mark.asyncio
-async def test_client_text_callback_without_last_calculation_shows_hint() -> None:
-    last_calculations.clear()
-    callback = FakeCallback(1001)
-
-    await show_client_text(callback)
-
-    assert callback.message.answers[0][0].startswith("Сначала выполните расчёт")
+    texts = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "📋 Текст для клиента" not in texts
 
 
 def test_investing_calculation_unavailable_message() -> None:
     assert "💱 Расчёт по рынку" in INVESTING_CALC_UNAVAILABLE_TEXT
     assert "Рыночные курсы временно недоступны." in INVESTING_CALC_UNAVAILABLE_TEXT
     assert "100 usd" in INVESTING_CALC_UNAVAILABLE_TEXT
+
+
+class FakeCbrService:
+    async def fetch_rates(self, target_date):
+        rate_date = date(2026, 5, 5)
+        return RatesSnapshot(
+            date=rate_date,
+            rates={
+                "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+            },
+        )
+
+
+class FakeMarketProvider:
+    async def get_rate(self, code: str):
+        return MarketRate(
+            code=code,
+            pair=f"{code}/RUB",
+            value=Decimal("74.8850"),
+            source="Yahoo Finance — рыночный ориентир",
+            fetched_at=datetime(2026, 5, 5, 12, 0),
+        )
+
+
+class FakeMessage:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.from_user = SimpleNamespace(id=1001)
+        self.answers: list[tuple[str, object | None]] = []
+
+    async def answer(self, text: str, reply_markup=None) -> None:
+        self.answers.append((text, reply_markup))
+
+
+@pytest.mark.asyncio
+async def test_successful_calculation_uses_client_format_and_two_buttons() -> None:
+    message = FakeMessage("10000 usd +2% +100ПП")
+
+    await convert_currency_handler(
+        message,
+        cbr_service=FakeCbrService(),
+        app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+        market_rate_provider=None,
+    )
+
+    text, keyboard = message.answers[0]
+    assert text == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 75,0000 RUB\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,5000 RUB\n"
+        "\n"
+        "Основной платёж:\n"
+        "10 000 USD = 765 000,00 RUB\n"
+        "\n"
+        "Доп. платёж:\n"
+        "100 USD = 7 650,00 RUB\n"
+        "\n"
+        "Итого:\n"
+        "765 000,00 RUB + 7 650,00 RUB = 772 650,00 RUB"
+    )
+    assert "Корректировка" not in text
+    assert "ПП" not in text
+    assert "Платёжка" not in text
+    assert "₽" not in text
+    assert keyboard is not None
+    rows = [[button.text for button in row] for row in keyboard.inline_keyboard]
+    assert rows == [["🔁 Новый расчёт", "🏠 Главное меню"]]
+
+
+@pytest.mark.asyncio
+async def test_market_calculation_uses_same_client_format_with_extra_payment() -> None:
+    user_rate_source[1001] = MARKET_SOURCE
+    message = FakeMessage("10000 usd +2% +100ПП")
+
+    await convert_currency_handler(
+        message,
+        cbr_service=FakeCbrService(),
+        app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+        market_rate_provider=FakeMarketProvider(),
+    )
+
+    text, keyboard = message.answers[0]
+    assert text == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 74,8850 RUB\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,3827 RUB\n"
+        "\n"
+        "Основной платёж:\n"
+        "10 000 USD = 763 827,00 RUB\n"
+        "\n"
+        "Доп. платёж:\n"
+        "100 USD = 7 638,27 RUB\n"
+        "\n"
+        "Итого:\n"
+        "763 827,00 RUB + 7 638,27 RUB = 771 465,27 RUB"
+    )
+    assert "Источник:" not in text
+    assert "Yahoo Finance" not in text
+    assert "💱 Расчёт по рыночному курсу" not in text
+    assert "💱 Расчёт по курсу ЦБ РФ" not in text
+    assert "📋 Текст для клиента" not in [button.text for row in keyboard.inline_keyboard for button in row]
+    user_rate_source.pop(1001, None)

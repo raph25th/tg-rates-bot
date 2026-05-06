@@ -10,10 +10,8 @@ from core.models import CurrencyRate, RatesSnapshot
 from handlers.start import CAPABILITIES_BUTTON, CBR_CALC_BUTTON, INVESTING_CALC_BUTTON, main_menu_keyboard
 from services.cbr import CBRService, CBRServiceError
 from services.converter import (
-    ConversionResult,
     SUPPORTED_CALCULATOR_CURRENCIES,
     convert_currency as calculate_conversion,
-    format_calculator_result,
     format_client_calculation_text,
     is_supported_request,
     looks_like_convert_attempt,
@@ -28,7 +26,6 @@ CBR_SOURCE = "CBR"
 MARKET_SOURCE = "MARKET"
 INVESTING_SOURCE = MARKET_SOURCE
 user_rate_source: dict[int, str] = {}
-last_calculations: dict[int, ConversionResult] = {}
 
 UNKNOWN_CURRENCY_TEXT = (
     "Неизвестная валюта. Сейчас доступны: "
@@ -43,13 +40,6 @@ INVESTING_CALC_UNAVAILABLE_TEXT = (
     "Пока можно использовать расчёт по курсу ЦБ РФ:\n"
     "100 usd\n"
     "10 000 usd +2%"
-)
-NO_CLIENT_CALCULATION_TEXT = (
-    "Сначала выполните расчёт, например:\n"
-    "\n"
-    "100 usd\n"
-    "10 000 usd +2%\n"
-    "1 000 000 rub в usd"
 )
 EXTRA_PAYMENT_REVERSE_UNSUPPORTED_TEXT = "Доп. платёж пока поддерживается только для расчётов из валюты в RUB."
 
@@ -144,25 +134,12 @@ def get_new_calculation_hint() -> str:
 def calculator_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Текст для клиента", callback_data="calc:client_text")],
             [
                 InlineKeyboardButton(text="🔁 Новый расчёт", callback_data="calc:new"),
                 InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
             ]
         ]
     )
-
-
-def _save_last_calculation(message: Message, result: ConversionResult) -> None:
-    if message.from_user is not None:
-        last_calculations[message.from_user.id] = result
-
-
-def get_client_text_for_user(user_id: int) -> str:
-    result = last_calculations.get(user_id)
-    if result is None:
-        return NO_CLIENT_CALCULATION_TEXT
-    return format_client_calculation_text(result)
 
 
 def _set_user_source(message: Message, source: str) -> None:
@@ -233,13 +210,6 @@ async def new_calculation(callback: CallbackQuery) -> None:
         await callback.message.answer(get_new_calculation_hint())
 
 
-@router.callback_query(F.data == "calc:client_text")
-async def show_client_text(callback: CallbackQuery) -> None:
-    await callback.answer()
-    if callback.message is not None and hasattr(callback.message, "answer"):
-        await callback.message.answer(get_client_text_for_user(callback.from_user.id))
-
-
 @router.callback_query(F.data == "main_menu")
 async def show_main_menu(callback: CallbackQuery) -> None:
     await callback.answer()
@@ -290,9 +260,8 @@ async def convert_currency(
             await message.answer(f"Пара {rate_code}/RUB временно недоступна в рыночном источнике.")
             return
 
-        _save_last_calculation(message, result)
         await message.answer(
-            format_calculator_result(result),
+            format_client_calculation_text(result),
             reply_markup=calculator_result_keyboard(),
         )
         return
@@ -310,8 +279,7 @@ async def convert_currency(
         await message.answer("Курс выбранной валюты сейчас недоступен. Попробуйте чуть позже.")
         return
 
-    _save_last_calculation(message, result)
     await message.answer(
-        format_calculator_result(result),
+        format_client_calculation_text(result),
         reply_markup=calculator_result_keyboard(),
     )

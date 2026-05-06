@@ -54,6 +54,28 @@ def test_convert_currency_to_rub_with_percent_and_direction_word() -> None:
     assert result.result == Decimal("763782.120000")
 
 
+def test_convert_currency_to_rub_with_extra_payment_and_percent() -> None:
+    rate_date = date(2026, 5, 5)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    request = parse_convert_request("10000 usd +2% +100ПП")
+    assert request is not None
+
+    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
+
+    assert result is not None
+    assert result.adjusted_unit_rate == Decimal("76.500000")
+    assert result.main_payment_rub == Decimal("765000.000000")
+    assert result.extra_payment_amount == Decimal("100")
+    assert result.extra_payment_rub == Decimal("7650.000000")
+    assert result.final_result == Decimal("772650.000000")
+    assert result.result == Decimal("772650.000000")
+
+
 def test_convert_rub_to_currency() -> None:
     request = parse_convert_request("56 548 468 рублей в usd")
     assert request is not None
@@ -119,25 +141,14 @@ def test_format_calculator_result_to_rub_with_percent() -> None:
     assert result is not None
 
     assert format_calculator_result(result) == (
-        "💱 Расчёт по курсу ЦБ РФ\n"
+        "Расчёт стоимости:\n"
         "\n"
-        "Сумма:\n"
-        "10 000 USD\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 74,8806 RUB\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,3782 RUB\n"
         "\n"
-        "Курс:\n"
-        "1 USD = 74,8806 ₽\n"
-        "\n"
-        "Корректировка:\n"
-        "+2%\n"
-        "\n"
-        "Расчётный курс:\n"
-        "1 USD = 76,3782 ₽\n"
-        "\n"
-        "Итого:\n"
-        "763 782,12 ₽\n"
-        "\n"
-        "Дата курса:\n"
-        "30.04.2026"
+        "Итого: 763 782,12 RUB"
     )
 
 
@@ -148,19 +159,12 @@ def test_format_calculator_result_from_rub() -> None:
     assert result is not None
 
     assert format_calculator_result(result) == (
-        "💱 Расчёт по курсу ЦБ РФ\n"
+        "Расчёт валюты:\n"
         "\n"
-        "Сумма:\n"
-        "1 000 000 ₽\n"
+        "Сумма: 1 000 000 RUB\n"
+        "Актуальный курс: 1 EUR = 88,2826 RUB\n"
         "\n"
-        "Курс:\n"
-        "1 EUR = 88,2826 ₽\n"
-        "\n"
-        "Итого:\n"
-        "11 327,26 EUR\n"
-        "\n"
-        "Дата курса:\n"
-        "30.04.2026"
+        "Итого: 11 327,26 EUR"
     )
 
 
@@ -173,24 +177,19 @@ def test_format_calculator_result_for_market_source_is_clean() -> None:
     formatted = format_calculator_result(result)
 
     assert formatted == (
-        "💱 Расчёт по рыночному курсу\n"
+        "Расчёт стоимости:\n"
         "\n"
-        "Сумма:\n"
-        "100 USD\n"
+        "Сумма: 100 USD\n"
+        "Актуальный курс: 1 USD = 74,8806 RUB\n"
         "\n"
-        "Курс:\n"
-        "1 USD = 74,8806 ₽\n"
-        "\n"
-        "Итого:\n"
-        "7 488,06 ₽\n"
-        "\n"
-        "Дата курса:\n"
-        "30.04.2026"
+        "Итого: 7 488,06 RUB"
     )
     assert "Источник:" not in formatted
     assert "Сформировано через @kurs_rub_bot" not in formatted
     assert "Рыночный курс является ориентиром" not in formatted
-    assert "Итого:\n7 488,06 ₽" in formatted
+    assert "Итого: 7 488,06 RUB" in formatted
+    assert "₽" not in formatted
+    assert "Корректировка" not in formatted
 
 
 def test_format_client_calculation_text_to_rub_with_percent_uses_rate_label() -> None:
@@ -205,17 +204,18 @@ def test_format_client_calculation_text_to_rub_with_percent_uses_rate_label() ->
         "Расчёт стоимости:\n"
         "\n"
         "Сумма: 10 000 USD\n"
-        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "Актуальный курс: 1 USD = 74,8806 RUB\n"
         "Ставка: +2%\n"
-        "Расчётный курс: 1 USD = 76,3782 ₽\n"
+        "Расчётный курс: 1 USD = 76,3782 RUB\n"
         "\n"
-        "Итого: 763 782,12 ₽"
+        "Итого: 763 782,12 RUB"
     )
     assert "Сумма: 10 000 USD" in formatted
     assert "Сумма:10 000 USD" not in formatted
     assert "Ставка: +2%" in formatted
     assert "Ставка:+2%" not in formatted
     assert "Корректировка" not in formatted
+    assert "₽" not in formatted
 
 
 def test_format_client_calculation_text_without_percent_omits_rate_lines() -> None:
@@ -230,14 +230,15 @@ def test_format_client_calculation_text_without_percent_omits_rate_lines() -> No
         "Расчёт стоимости:\n"
         "\n"
         "Сумма: 10 000 USD\n"
-        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "Актуальный курс: 1 USD = 74,8806 RUB\n"
         "\n"
-        "Итого: 748 806,00 ₽"
+        "Итого: 748 806,00 RUB"
     )
     assert "Ставка" not in formatted
     assert "Расчётный курс" not in formatted
     assert "Корректировка" not in formatted
-    assert "Итого: 748 806,00 ₽" in formatted
+    assert "Итого: 748 806,00 RUB" in formatted
+    assert "₽" not in formatted
 
 
 def test_format_client_calculation_text_from_rub_with_percent() -> None:
@@ -251,12 +252,76 @@ def test_format_client_calculation_text_from_rub_with_percent() -> None:
     assert formatted.startswith(
         "Расчёт валюты:\n"
         "\n"
-        "Сумма: 1 000 000 ₽\n"
-        "Актуальный курс: 1 USD = 74,8806 ₽\n"
+        "Сумма: 1 000 000 RUB\n"
+        "Актуальный курс: 1 USD = 74,8806 RUB\n"
         "Ставка: +2%\n"
-        "Расчётный курс: 1 USD = 76,3782 ₽\n"
+        "Расчётный курс: 1 USD = 76,3782 RUB\n"
         "\n"
         "Итого: "
     )
     assert formatted.endswith(" USD")
     assert "Корректировка" not in formatted
+    assert "₽" not in formatted
+
+
+def test_format_client_calculation_text_with_extra_payment() -> None:
+    rate_date = date(2026, 5, 5)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    request = parse_convert_request("10000 usd +2% +100ПП")
+    assert request is not None
+    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert formatted == (
+        "Расчёт стоимости:\n"
+        "\n"
+        "Сумма: 10 000 USD\n"
+        "Актуальный курс: 1 USD = 75,0000 RUB\n"
+        "Ставка: +2%\n"
+        "Расчётный курс: 1 USD = 76,5000 RUB\n"
+        "\n"
+        "Основной платёж:\n"
+        "10 000 USD = 765 000,00 RUB\n"
+        "\n"
+        "Доп. платёж:\n"
+        "100 USD = 7 650,00 RUB\n"
+        "\n"
+        "Итого:\n"
+        "765 000,00 RUB + 7 650,00 RUB = 772 650,00 RUB"
+    )
+    assert "Доп. платёж" in formatted
+    assert "Основной платёж" in formatted
+    assert "Ставка: +2%" in formatted
+    assert "ПП" not in formatted
+    assert "Платёжка" not in formatted
+    assert "Корректировка" not in formatted
+    assert "₽" not in formatted
+
+
+def test_format_client_calculation_text_with_extra_payment_without_percent() -> None:
+    rate_date = date(2026, 5, 5)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    request = parse_convert_request("10000 usd +100ПП")
+    assert request is not None
+    result = convert_currency(request, snapshot, source="ЦБ РФ — официальный курс")
+    assert result is not None
+
+    formatted = format_client_calculation_text(result)
+
+    assert "Ставка" not in formatted
+    assert "Расчётный курс" not in formatted
+    assert "Основной платёж:\n10 000 USD = 750 000,00 RUB" in formatted
+    assert "Доп. платёж:\n100 USD = 7 500,00 RUB" in formatted
+    assert "750 000,00 RUB + 7 500,00 RUB = 757 500,00 RUB" in formatted
