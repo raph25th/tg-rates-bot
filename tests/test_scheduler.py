@@ -8,9 +8,11 @@ from db.models import UserSettings
 from services.cbr import CurrencyRate, RatesSnapshot
 from services.scheduler import (
     DAILY_RETRY_DELAY_MINUTES,
+    calculate_cbr_rate_change,
     cbr_update_notification_keyboard,
     check_cbr_update_notifications,
     format_cbr_update_notification,
+    get_previous_cbr_rates,
     send_daily_rates,
 )
 
@@ -129,6 +131,36 @@ def make_full_snapshot(rate_date: date) -> RatesSnapshot:
     return RatesSnapshot(date=rate_date, rates=rates)
 
 
+def make_comparison_current_snapshot() -> RatesSnapshot:
+    rate_date = date(2026, 5, 6)
+    rates = {
+        "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.4388"), Decimal("75.4388"), rate_date),
+        "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.2651"), Decimal("88.2651"), rate_date),
+        "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("11.0343"), Decimal("11.0343"), rate_date),
+        "GBP": CurrencyRate("GBP", "Фунт стерлингов", 1, Decimal("102.4610"), Decimal("102.4610"), rate_date),
+        "AED": CurrencyRate("AED", "Дирхам ОАЭ", 1, Decimal("20.5415"), Decimal("20.5415"), rate_date),
+        "THB": CurrencyRate("THB", "Бат", 1, Decimal("2.3021"), Decimal("2.3021"), rate_date),
+        "KRW": CurrencyRate("KRW", "Вона", 1000, Decimal("50.8000"), Decimal("0.0508"), rate_date),
+        "JPY": CurrencyRate("JPY", "Иена", 100, Decimal("48.0000"), Decimal("0.4800"), rate_date),
+    }
+    return RatesSnapshot(date=rate_date, rates=rates)
+
+
+def make_comparison_previous_snapshot() -> RatesSnapshot:
+    rate_date = date(2026, 5, 5)
+    rates = {
+        "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0157"), Decimal("75.0157"), rate_date),
+        "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.4755"), Decimal("88.4755"), rate_date),
+        "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("11.0193"), Decimal("11.0193"), rate_date),
+        "GBP": CurrencyRate("GBP", "Фунт стерлингов", 1, Decimal("102.7610"), Decimal("102.7610"), rate_date),
+        "AED": CurrencyRate("AED", "Дирхам ОАЭ", 1, Decimal("20.4295"), Decimal("20.4295"), rate_date),
+        "THB": CurrencyRate("THB", "Бат", 1, Decimal("2.3061"), Decimal("2.3061"), rate_date),
+        "KRW": CurrencyRate("KRW", "Вона", 1000, Decimal("50.7000"), Decimal("0.0507"), rate_date),
+        "JPY": CurrencyRate("JPY", "Иена", 100, Decimal("48.3200"), Decimal("0.4832"), rate_date),
+    }
+    return RatesSnapshot(date=rate_date, rates=rates)
+
+
 @pytest.mark.asyncio
 async def test_send_daily_rates_sends_only_selected_currencies_to_daily_users() -> None:
     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
@@ -174,8 +206,8 @@ async def test_send_daily_rates_retries_when_cbr_date_is_not_today() -> None:
     assert retry_kwargs["retry_count"] == 1
 
 
-def test_format_cbr_update_notification() -> None:
-    message = format_cbr_update_notification(make_full_snapshot(date(2026, 5, 6)))
+def test_format_cbr_update_notification_with_changes() -> None:
+    message = format_cbr_update_notification(make_comparison_current_snapshot(), make_comparison_previous_snapshot())
 
     assert message == (
         "📊 Курсы ЦБ РФ обновлены\n"
@@ -183,30 +215,137 @@ def test_format_cbr_update_notification() -> None:
         "Дата курса:\n"
         "06.05.2026\n"
         "\n"
-        "USD:\n"
-        "1 USD = 75,1234\n"
+        "Сравнение с:\n"
+        "05.05.2026\n"
         "\n"
-        "EUR:\n"
-        "1 EUR = 86,4321\n"
+        "USD — Доллар США\n"
+        "1 USD = 75,4388 RUB\n"
+        "Изменение: +0,4231 RUB / +0,56%\n"
+        "Курс вырос 📈\n"
         "\n"
-        "CNY:\n"
-        "1 CNY = 10,4321\n"
+        "EUR — Евро\n"
+        "1 EUR = 88,2651 RUB\n"
+        "Изменение: -0,2104 RUB / -0,24%\n"
+        "Курс снизился 📉\n"
         "\n"
-        "GBP:\n"
-        "1 GBP = 101,1234\n"
+        "CNY — Китайский юань\n"
+        "1 CNY = 11,0343 RUB\n"
+        "Изменение: +0,0150 RUB / +0,14%\n"
+        "Курс вырос 📈\n"
         "\n"
-        "AED:\n"
-        "1 AED = 20,4512\n"
+        "GBP — Фунт стерлингов\n"
+        "1 GBP = 102,4610 RUB\n"
+        "Изменение: -0,3000 RUB / -0,29%\n"
+        "Курс снизился 📉\n"
         "\n"
-        "THB:\n"
-        "1 THB = 2,3042\n"
+        "AED — Дирхам ОАЭ\n"
+        "1 AED = 20,5415 RUB\n"
+        "Изменение: +0,1120 RUB / +0,55%\n"
+        "Курс вырос 📈\n"
         "\n"
-        "KRW:\n"
-        "1 KRW = 0,0508\n"
+        "THB — Тайский бат\n"
+        "1 THB = 2,3021 RUB\n"
+        "Изменение: -0,0040 RUB / -0,17%\n"
+        "Курс снизился 📉\n"
         "\n"
-        "JPY:\n"
-        "1 JPY = 0,4728"
+        "KRW — Южнокорейская вона\n"
+        "1 KRW = 0,0508 RUB\n"
+        "Изменение: +0,0001 RUB / +0,20%\n"
+        "Курс вырос 📈\n"
+        "\n"
+        "JPY — Японская иена\n"
+        "1 JPY = 0,4800 RUB\n"
+        "Изменение: -0,0032 RUB / -0,66%\n"
+        "Курс снизился 📉"
     )
+
+
+def test_format_cbr_update_notification_without_previous_rates() -> None:
+    message = format_cbr_update_notification(make_full_snapshot(date(2026, 5, 6)))
+
+    assert "Не удалось получить предыдущий курс для сравнения." in message
+    assert "Сравнение с:" not in message
+    assert "USD — Доллар США\n1 USD = 75,1234 RUB" in message
+    assert "Изменение:" not in message
+
+
+def test_format_cbr_update_notification_omits_change_for_missing_previous_currency() -> None:
+    current = make_comparison_current_snapshot()
+    previous = RatesSnapshot(
+        date=date(2026, 5, 5),
+        rates={
+            "USD": make_comparison_previous_snapshot().rates["USD"],
+        },
+    )
+
+    message = format_cbr_update_notification(current, previous)
+
+    assert "USD — Доллар США\n1 USD = 75,4388 RUB\nИзменение: +0,4231 RUB / +0,56%" in message
+    assert "EUR — Евро\n1 EUR = 88,2651 RUB\n\nCNY" in message
+
+
+def test_calculate_cbr_rate_change_uses_unit_rate_for_jpy_and_krw() -> None:
+    current = make_comparison_current_snapshot()
+    previous = make_comparison_previous_snapshot()
+
+    jpy_change = calculate_cbr_rate_change(current.rates["JPY"], previous.rates["JPY"])
+    krw_change = calculate_cbr_rate_change(current.rates["KRW"], previous.rates["KRW"])
+
+    assert jpy_change is not None
+    assert jpy_change.delta_rub == Decimal("-0.0032")
+    assert jpy_change.delta_percent.quantize(Decimal("0.01")) == Decimal("-0.66")
+    assert krw_change is not None
+    assert krw_change.delta_rub == Decimal("0.0001")
+    assert krw_change.delta_percent.quantize(Decimal("0.01")) == Decimal("0.20")
+
+
+def test_format_cbr_update_notification_shows_zero_change() -> None:
+    rate_date = date(2026, 5, 6)
+    previous_date = date(2026, 5, 5)
+    current = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    previous = RatesSnapshot(
+        date=previous_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), previous_date),
+        },
+    )
+
+    message = format_cbr_update_notification(current, previous)
+
+    assert "Изменение: 0,0000 RUB / 0,00%" in message
+    assert "Курс не изменился ➖" in message
+
+
+class PreviousSearchCBRService:
+    def __init__(self) -> None:
+        self.calls: list[date] = []
+
+    async def fetch_rates(self, target_date: date) -> RatesSnapshot:
+        self.calls.append(target_date)
+        if target_date >= date(2026, 5, 9):
+            return make_full_snapshot(date(2026, 5, 12))
+        return make_full_snapshot(date(2026, 5, 8))
+
+
+@pytest.mark.asyncio
+async def test_get_previous_cbr_rates_finds_previous_available_published_date() -> None:
+    service = PreviousSearchCBRService()
+
+    previous = await get_previous_cbr_rates(service, date(2026, 5, 12))
+
+    assert previous is not None
+    assert previous.date == date(2026, 5, 8)
+    assert service.calls == [
+        date(2026, 5, 11),
+        date(2026, 5, 10),
+        date(2026, 5, 9),
+        date(2026, 5, 8),
+    ]
 
 
 def test_cbr_update_notification_keyboard() -> None:

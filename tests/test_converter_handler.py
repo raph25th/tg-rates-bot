@@ -32,7 +32,7 @@ def test_capabilities_hint_covers_supported_examples() -> None:
     assert "📉 Спред" in hint
     assert "Бот показывает разницу между курсом ЦБ РФ и рыночным курсом для USD, AED, CNY и EUR." in hint
     assert "🔔 Уведомления ЦБ" in hint
-    assert "Бот может присылать курс ЦБ РФ после его обновления." in hint
+    assert "Бот присылает курс ЦБ РФ после обновления и показывает, насколько курс вырос или снизился относительно предыдущего опубликованного курса." in hint
     assert "100 usd" in hint
     assert "10 000 aed +2%" in hint
     assert "1 000 000 rub в usd" in hint
