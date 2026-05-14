@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
 
-from db.models import UserSettings
+from db.models import AdminUserRow, BotStats, UserSettings
 from services.formatter import normalize_currency_codes
 
 VALID_MODES = {"daily", "manual"}
@@ -41,6 +41,9 @@ class UserRepository:
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     telegram_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
                     mode TEXT NOT NULL DEFAULT 'manual',
                     daily_time TEXT NOT NULL DEFAULT '18:10',
                     timezone TEXT NOT NULL DEFAULT 'Europe/Moscow',
@@ -75,6 +78,9 @@ class UserRepository:
                 "last_sent_cbr_date",
                 "TEXT",
             )
+            self._ensure_users_column(connection, "username", "TEXT")
+            self._ensure_users_column(connection, "first_name", "TEXT")
+            self._ensure_users_column(connection, "last_name", "TEXT")
 
     def ensure_user(self, telegram_id: int) -> None:
         with self._connect() as connection:
@@ -87,12 +93,58 @@ class UserRepository:
                 (telegram_id, self.default_daily_time, self.default_timezone),
             )
 
+    def update_user_profile(
+        self,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        last_name: str | None,
+    ) -> UserSettings:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO users (
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    mode,
+                    daily_time,
+                    timezone
+                )
+                VALUES (?, ?, ?, ?, 'manual', ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    self.default_daily_time,
+                    self.default_timezone,
+                ),
+            )
+        return self.get_user_settings(telegram_id)
+
     def get_user_settings(self, telegram_id: int) -> UserSettings:
         self.ensure_user(telegram_id)
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
+                SELECT
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    mode,
+                    daily_time,
+                    timezone,
+                    cbr_update_notifications,
+                    last_sent_cbr_date
                 FROM users
                 WHERE telegram_id = ?
                 """,
@@ -102,6 +154,9 @@ class UserRepository:
 
         return UserSettings(
             telegram_id=row["telegram_id"],
+            username=row["username"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
             mode=row["mode"],
             daily_time=row["daily_time"],
             timezone=row["timezone"],
@@ -198,7 +253,16 @@ class UserRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
+                SELECT
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    mode,
+                    daily_time,
+                    timezone,
+                    cbr_update_notifications,
+                    last_sent_cbr_date
                 FROM users
                 WHERE mode = 'daily'
                 ORDER BY telegram_id
@@ -207,6 +271,9 @@ class UserRepository:
             return [
                 UserSettings(
                     telegram_id=row["telegram_id"],
+                    username=row["username"],
+                    first_name=row["first_name"],
+                    last_name=row["last_name"],
                     mode=row["mode"],
                     daily_time=row["daily_time"],
                     timezone=row["timezone"],
@@ -234,7 +301,16 @@ class UserRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT telegram_id, mode, daily_time, timezone, cbr_update_notifications, last_sent_cbr_date
+                SELECT
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    mode,
+                    daily_time,
+                    timezone,
+                    cbr_update_notifications,
+                    last_sent_cbr_date
                 FROM users
                 WHERE cbr_update_notifications = 1
                 ORDER BY telegram_id
@@ -243,6 +319,9 @@ class UserRepository:
             return [
                 UserSettings(
                     telegram_id=row["telegram_id"],
+                    username=row["username"],
+                    first_name=row["first_name"],
+                    last_name=row["last_name"],
                     mode=row["mode"],
                     daily_time=row["daily_time"],
                     timezone=row["timezone"],
@@ -252,6 +331,56 @@ class UserRepository:
                 )
                 for row in rows
             ]
+
+    def get_bot_stats(self) -> BotStats:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_users,
+                    COALESCE(SUM(cbr_update_notifications), 0) AS cbr_update_notifications,
+                    SUM(CASE WHEN created_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END) AS new_24h,
+                    SUM(CASE WHEN created_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS new_7d
+                FROM users
+                """
+            ).fetchone()
+        return BotStats(
+            total_users=int(row["total_users"]),
+            cbr_update_notifications=int(row["cbr_update_notifications"]),
+            new_24h=int(row["new_24h"] or 0),
+            new_7d=int(row["new_7d"] or 0),
+        )
+
+    def list_admin_users(self, limit: int = 30) -> list[AdminUserRow]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name,
+                    cbr_update_notifications,
+                    created_at,
+                    updated_at
+                FROM users
+                ORDER BY updated_at DESC, telegram_id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            AdminUserRow(
+                telegram_id=row["telegram_id"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                cbr_update_notifications=bool(row["cbr_update_notifications"]),
+                created_at=_parse_datetime(row["created_at"]),
+                updated_at=_parse_datetime(row["updated_at"]),
+            )
+            for row in rows
+        ]
 
     def mark_cbr_update_notification_sent(self, telegram_id: int, rate_date: date) -> None:
         self.ensure_user(telegram_id)
@@ -321,3 +450,7 @@ def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
     return date.fromisoformat(value)
+
+
+def _parse_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value)

@@ -1,13 +1,16 @@
 import argparse
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from aiogram import Bot, Dispatcher
+from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
+from aiogram.types import TelegramObject
 
 from config import Settings
 from db.repo import UserRepository
-from handlers import converter, notifications, rates, settings as settings_handlers
+from handlers import admin, converter, notifications, rates, settings as settings_handlers
 from handlers.start import router as start_router
 from core.money import format_rate
 from services.cbr import CBRService
@@ -16,6 +19,25 @@ from services.scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
 POLLING_RETRY_DELAY_SECONDS = 15
+
+
+class UserProfileMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        repo = data.get("repo")
+        from_user = getattr(event, "from_user", None)
+        if repo is not None and from_user is not None:
+            repo.update_user_profile(
+                telegram_id=from_user.id,
+                username=from_user.username,
+                first_name=from_user.first_name,
+                last_name=from_user.last_name,
+            )
+        return await handler(event, data)
 
 
 async def delete_webhook_safely(bot: Bot) -> None:
@@ -206,7 +228,10 @@ async def run() -> None:
 
     bot = Bot(token=app_config.bot_token)
     dp = Dispatcher()
+    dp.message.middleware(UserProfileMiddleware())
+    dp.callback_query.middleware(UserProfileMiddleware())
     dp.include_router(start_router)
+    dp.include_router(admin.router)
     dp.include_router(rates.router)
     dp.include_router(notifications.router)
     dp.include_router(settings_handlers.router)

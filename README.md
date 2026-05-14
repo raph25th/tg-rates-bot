@@ -33,12 +33,28 @@ pip install -r requirements.txt
 
 ```env
 BOT_TOKEN=123456:your-token
+OWNER_TELEGRAM_ID=
+ADMIN_TELEGRAM_IDS=
 DATABASE_URL=sqlite:///bot.db
 DEFAULT_DAILY_TIME=18:10
 TIMEZONE=Europe/Moscow
 MARKET_RATE_PROVIDER=yahoo
 INVESTING_PROVIDER_MODE=disabled
 ```
+
+`OWNER_TELEGRAM_ID` задаёт владельца бота, которому доступна команда `/users`.
+
+```env
+OWNER_TELEGRAM_ID=762498021
+```
+
+`ADMIN_TELEGRAM_IDS` задаёт список администраторов через запятую, например:
+
+```env
+ADMIN_TELEGRAM_IDS=762498021,123456789
+```
+
+Если `OWNER_TELEGRAM_ID` пустой, команда `/users` никому не доступна.
 
 ## Запуск
 

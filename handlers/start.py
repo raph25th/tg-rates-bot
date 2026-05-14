@@ -4,6 +4,8 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
+from db.repo import UserRepository
+
 logger = logging.getLogger(__name__)
 router = Router()
 
@@ -33,9 +35,16 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 @router.message(Command("start"))
-async def start_handler(message: Message) -> None:
+async def start_handler(message: Message, repo: UserRepository | None = None) -> None:
     user_id = message.from_user.id if message.from_user else "unknown"
     logger.info("Received /start from %s", user_id)
+    if repo is not None and message.from_user is not None:
+        repo.update_user_profile(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
     await message.answer(
         "Привет 👋\n"
         "\n"
