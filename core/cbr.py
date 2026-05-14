@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Mapping
 from xml.etree import ElementTree
 
 from core.models import CurrencyRate, RatesSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 class CBRServiceError(RuntimeError):
@@ -91,22 +94,31 @@ class CBRService:
         self.timeout_seconds = timeout_seconds
         self.max_previous_lookup_days = max_previous_lookup_days
 
-    async def fetch_rates(self, target_date: date) -> RatesSnapshot:
+    async def _fetch_rates(self, params: dict[str, str] | None = None) -> RatesSnapshot:
         try:
             import aiohttp
 
             timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    self.base_url,
-                    params={"date_req": target_date.strftime("%d/%m/%Y")},
-                ) as response:
+                async with session.get(self.base_url, params=params) as response:
                     response.raise_for_status()
                     payload = await response.read()
         except Exception as exc:
             raise CBRServiceError("Could not fetch CBR rates") from exc
 
-        return parse_cbr_xml(payload)
+        snapshot = parse_cbr_xml(payload)
+        return snapshot
+
+    async def get_latest_cbr_rates(self) -> RatesSnapshot:
+        snapshot = await self._fetch_rates()
+        logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+        return snapshot
+
+    async def fetch_latest_rates(self) -> RatesSnapshot:
+        return await self.get_latest_cbr_rates()
+
+    async def fetch_rates(self, target_date: date) -> RatesSnapshot:
+        return await self._fetch_rates({"date_req": target_date.strftime("%d/%m/%Y")})
 
     async def fetch_previous_available(self, before_date: date) -> RatesSnapshot:
         cursor = before_date - timedelta(days=1)

@@ -1,7 +1,9 @@
 from datetime import date
 from decimal import Decimal
 
-from services.cbr import CurrencyRate, calculate_deltas, parse_cbr_xml
+import pytest
+
+from services.cbr import CBRService, CurrencyRate, calculate_deltas, parse_cbr_xml
 
 
 SAMPLE_XML = """<?xml version="1.0" encoding="windows-1251"?>
@@ -79,3 +81,41 @@ def test_calculate_deltas_uses_unit_rate() -> None:
         "USD": Decimal("0.6900"),
         "CNY": Decimal("0.0700"),
     }
+
+
+@pytest.mark.asyncio
+async def test_get_latest_cbr_rates_uses_cbr_response_date_without_date_req() -> None:
+    class FakeCBRService(CBRService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.params = "not-called"
+
+        async def _fetch_rates(self, params=None):
+            self.params = params
+            return parse_cbr_xml(SAMPLE_XML)
+
+    service = FakeCBRService()
+
+    snapshot = await service.get_latest_cbr_rates()
+
+    assert service.params is None
+    assert snapshot.date == date(2026, 4, 26)
+
+
+@pytest.mark.asyncio
+async def test_fetch_rates_uses_requested_date_req_but_keeps_response_date() -> None:
+    class FakeCBRService(CBRService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.params = None
+
+        async def _fetch_rates(self, params=None):
+            self.params = params
+            return parse_cbr_xml(SAMPLE_XML)
+
+    service = FakeCBRService()
+
+    snapshot = await service.fetch_rates(date(2026, 4, 30))
+
+    assert service.params == {"date_req": "30/04/2026"}
+    assert snapshot.date == date(2026, 4, 26)

@@ -122,6 +122,14 @@ class FakeCbrService:
             raise self.error
         return self.snapshot
 
+    async def get_latest_cbr_rates(self):
+        if self.error is not None:
+            raise self.error
+        return self.snapshot
+
+    async def fetch_latest_rates(self):
+        return await self.get_latest_cbr_rates()
+
 
 class FakeMarketProvider:
     def __init__(self, rates: dict[str, MarketRate] | None = None, error: Exception | None = None) -> None:

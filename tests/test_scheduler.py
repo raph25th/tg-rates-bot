@@ -70,6 +70,8 @@ class FakeCBRService:
     def __init__(self, snapshot: RatesSnapshot | None = None, error: Exception | None = None) -> None:
         self.snapshot = snapshot
         self.error = error
+        self.fetch_latest_calls = 0
+        self.fetch_rate_dates: list[date] = []
 
     async def get_rates_with_delta(self, target_date: date) -> RatesSnapshot:
         if self.error is not None:
@@ -78,10 +80,21 @@ class FakeCBRService:
         return self.snapshot
 
     async def fetch_rates(self, target_date: date) -> RatesSnapshot:
+        self.fetch_rate_dates.append(target_date)
         if self.error is not None:
             raise self.error
         assert self.snapshot is not None
         return self.snapshot
+
+    async def get_latest_cbr_rates(self) -> RatesSnapshot:
+        self.fetch_latest_calls += 1
+        if self.error is not None:
+            raise self.error
+        assert self.snapshot is not None
+        return self.snapshot
+
+    async def fetch_latest_rates(self) -> RatesSnapshot:
+        return await self.get_latest_cbr_rates()
 
 
 class FakeScheduler:
@@ -365,11 +378,12 @@ async def test_cbr_update_notification_sends_new_date_once() -> None:
     rate_date = date(2026, 5, 6)
     bot = FakeBot()
     repo = FakeRepo([UserSettings(telegram_id=1, cbr_update_notifications=True)])
+    cbr_service = FakeCBRService(make_full_snapshot(rate_date))
 
     await check_cbr_update_notifications(
         bot=bot,
         repo=repo,
-        cbr_service=FakeCBRService(make_full_snapshot(rate_date)),
+        cbr_service=cbr_service,
         timezone_name="Europe/Moscow",
         now=now,
     )
@@ -381,6 +395,7 @@ async def test_cbr_update_notification_sends_new_date_once() -> None:
         now=now,
     )
 
+    assert cbr_service.fetch_latest_calls == 1
     assert len(bot.messages) == 1
     assert bot.messages[0][0] == 1
     assert "📊 Курсы ЦБ РФ обновлены" in bot.messages[0][1]

@@ -9,6 +9,7 @@ from config import Settings
 from db.repo import UserRepository
 from handlers import converter, notifications, rates, settings as settings_handlers
 from handlers.start import router as start_router
+from core.money import format_rate
 from services.cbr import CBRService
 from services.rates.market import build_market_rate_provider
 from services.scheduler import setup_scheduler
@@ -176,6 +177,24 @@ async def run_health_check() -> int:
     return 0
 
 
+async def run_cbr_health_check() -> int:
+    cbr_service = CBRService()
+    try:
+        snapshot = await cbr_service.get_latest_cbr_rates()
+    except Exception as exc:
+        print(f"CBR health check failed: {exc}", flush=True)
+        logger.exception("CBR health check failed")
+        return 1
+
+    print(f"latest_cbr_date={snapshot.date.isoformat()}", flush=True)
+    for code in ("USD", "EUR", "CNY"):
+        rate = snapshot.rates.get(code)
+        if rate is not None:
+            print(f"{code}={format_rate(rate.unit_rate)}", flush=True)
+    logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+    return 0
+
+
 async def run() -> None:
     app_config = Settings.from_env()
     repo = UserRepository(
@@ -233,7 +252,15 @@ def main() -> None:
         action="store_true",
         help="Check BOT_TOKEN and Telegram API availability with bot.get_me(), then exit.",
     )
+    parser.add_argument(
+        "--cbr-health-check",
+        action="store_true",
+        help="Fetch latest CBR rates without date_req and print latest_cbr_date plus key rates.",
+    )
     args = parser.parse_args()
+
+    if args.cbr_health_check:
+        raise SystemExit(asyncio.run(run_cbr_health_check()))
 
     if args.health_check:
         raise SystemExit(asyncio.run(run_health_check()))

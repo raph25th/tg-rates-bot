@@ -12,6 +12,7 @@ def _normalize_currency_word(value: str) -> str:
 RUB_CODE = "RUB"
 SUPPORTED_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "CNY", "GBP", "AED", "THB", "KRW", "JPY")
 SKIP_WORDS = {"в", "to", "into", "на", "по", "цб"}
+AGENT_WORDS = {"агент", "агентский", "аг", "agent"}
 CURRENCY_ALIASES: dict[str, tuple[str, ...]] = {
     "USD": ("usd", "доллар", "доллара", "долларов", "доллары", "бакс", "бакса", "баксов", "юсд", "юэсд", "долл", "$"),
     "EUR": ("eur", "евро", "евра", "€"),
@@ -57,6 +58,11 @@ class ConversionRequest:
     percent_adjustment: Decimal | None
     extra_payment_amount: Decimal | None
     direction: str
+    is_agent_calculation: bool = False
+    client_percent: Decimal | None = None
+    main_rate_percent: Decimal | None = None
+    agent_fee_percent: Decimal = Decimal("0.1")
+    extra_payment_usd: Decimal | None = None
 
 
 def parse_conversion_request(text: str) -> ConversionRequest | None:
@@ -74,6 +80,7 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
 
     percent: Decimal | None = None
     extra_payment_amount: Decimal | None = None
+    is_agent_calculation = False
     tokens: list[str] = []
     index = 0
     while index < len(raw_tokens):
@@ -91,6 +98,11 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
             continue
 
         normalized = _normalize_currency_word(token)
+        if normalized in AGENT_WORDS:
+            is_agent_calculation = True
+            index += 1
+            continue
+
         if normalized in SKIP_WORDS:
             index += 1
             continue
@@ -122,6 +134,9 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
             return None
         direction = "currency_to_rub"
 
+    client_percent = percent if is_agent_calculation else None
+    main_rate_percent = client_percent - Decimal("0.1") if client_percent is not None else None
+
     return ConversionRequest(
         amount=amount,
         from_currency=from_currency,
@@ -129,6 +144,10 @@ def parse_conversion_request(text: str) -> ConversionRequest | None:
         percent_adjustment=percent,
         extra_payment_amount=extra_payment_amount,
         direction=direction,
+        is_agent_calculation=is_agent_calculation,
+        client_percent=client_percent,
+        main_rate_percent=main_rate_percent,
+        extra_payment_usd=extra_payment_amount,
     )
 
 

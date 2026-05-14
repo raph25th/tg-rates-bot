@@ -1,22 +1,33 @@
 import logging
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from dataclasses import replace
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import Settings
 from core.models import CurrencyRate, RatesSnapshot
-from handlers.start import CAPABILITIES_BUTTON, CBR_CALC_BUTTON, INVESTING_CALC_BUTTON, main_menu_keyboard
+from handlers.start import (
+    AGENT_CBR_CALC_BUTTON,
+    AGENT_MARKET_CALC_BUTTON,
+    CAPABILITIES_BUTTON,
+    CBR_CALC_BUTTON,
+    INVESTING_CALC_BUTTON,
+    main_menu_keyboard,
+)
 from services.cbr import CBRService, CBRServiceError
 from services.converter import (
+    AgentCalculationResult,
     SUPPORTED_CALCULATOR_CURRENCIES,
+    convert_agent_calculation,
     convert_currency as calculate_conversion,
+    format_agent_calculation_result,
     format_client_calculation_text,
     is_supported_request,
     looks_like_convert_attempt,
     parse_convert_request,
 )
+from core.money import format_number
+from services.ruble_words import amount_to_russian_words
 from services.rates.market import MarketRate, MarketRateProviderError, PairUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -25,7 +36,10 @@ router = Router(name="converter")
 CBR_SOURCE = "CBR"
 MARKET_SOURCE = "MARKET"
 INVESTING_SOURCE = MARKET_SOURCE
+AGENT_CBR_SOURCE = "AGENT_CBR"
+AGENT_MARKET_SOURCE = "AGENT_MARKET"
 user_rate_source: dict[int, str] = {}
+last_agent_calculations: dict[int, AgentCalculationResult] = {}
 
 UNKNOWN_CURRENCY_TEXT = (
     "Неизвестная валюта. Сейчас доступны: "
@@ -42,6 +56,23 @@ INVESTING_CALC_UNAVAILABLE_TEXT = (
     "10 000 usd +2%"
 )
 EXTRA_PAYMENT_REVERSE_UNSUPPORTED_TEXT = "Доп. платёж пока поддерживается только для расчётов из валюты в RUB."
+AGENT_REVERSE_UNSUPPORTED_TEXT = "Агентский расчёт пока поддерживается только для расчётов из валюты в RUB."
+AGENT_PERCENT_REQUIRED_TEXT = "Для агентского расчёта укажите ставку клиента, например: 10 000 USD +2,5%"
+AGENT_RATE_TOO_LOW_TEXT = "Агентская ставка должна быть больше 0,1%."
+NO_AGENT_CALCULATION_TEXT = (
+    "Сначала выполните агентский расчёт, например:\n"
+    "\n"
+    "10 000 USD +2,5%\n"
+    "50 200 CNY +2,5% +200ПП"
+)
+AGENT_HINT_TEXT = (
+    "Введите сумму, ставку и при необходимости доп. платёж.\n"
+    "\n"
+    "Примеры:\n"
+    "10 000 USD +2,5%\n"
+    "10 000 USD +2,5% +100ПП\n"
+    "50 200 CNY +2,5% +200ПП"
+)
 
 
 def market_rate_to_snapshot(rate: MarketRate) -> RatesSnapshot:
@@ -123,6 +154,14 @@ def get_capabilities_hint() -> str:
         "\n"
         "Доп. платёж всегда считается в USD по тому же источнику курса и с той же ставкой.\n"
         "\n"
+        "Агентский расчёт:\n"
+        "10 000 USD +2,5%\n"
+        "10 000 USD +2,5% +100ПП\n"
+        "50 200 CNY +2,5% +200ПП\n"
+        "\n"
+        "В агентском расчёте ставка клиента делится на основную ставку и агентское вознаграждение 0,1%.\n"
+        "Доп. платёж всегда считается в USD и входит в основной платёж.\n"
+        "\n"
         "Можно писать как код валюты, так и словами:\n"
         "10 000 usd\n"
         "10 000 долларов\n"
@@ -144,6 +183,8 @@ def get_new_calculation_hint() -> str:
         "1 000 000 rub в usd\n"
         "10 000 usd +2% +100ПП\n"
         "50 200 CNY +2% +200ПП\n"
+        "10 000 USD +2,5%\n"
+        "50 200 CNY +2,5% +200ПП\n"
         "\n"
         "Больше возможностей — в разделе:\n"
         "❓ Что умеет бот"
@@ -161,6 +202,54 @@ def calculator_result_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def agent_calculation_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Версия для поручения", callback_data="agent:assignment_text")],
+            [
+                InlineKeyboardButton(text="🔁 Новый расчёт", callback_data="calc:new"),
+                InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu"),
+            ],
+        ]
+    )
+
+
+def _save_last_agent_calculation(message: Message, result: AgentCalculationResult) -> None:
+    if message.from_user is not None:
+        last_agent_calculations[message.from_user.id] = result
+
+
+def _format_rub_number(value) -> str:
+    return f"{format_number(value, places=2, trim_zero_fraction=False)} RUB"
+
+
+def format_agent_assignment_text(result: AgentCalculationResult) -> str:
+    return "\n".join(
+        [
+            "Версия для поручения:",
+            "",
+            "Основной платёж:",
+            _format_rub_number(result.main_payment_rub),
+            amount_to_russian_words(result.main_payment_rub),
+            "",
+            "Агентское вознаграждение:",
+            _format_rub_number(result.agent_fee_rub),
+            amount_to_russian_words(result.agent_fee_rub),
+            "",
+            "Итоговая сумма:",
+            _format_rub_number(result.final_result),
+            amount_to_russian_words(result.final_result),
+        ]
+    )
+
+
+def get_agent_assignment_text_for_user(user_id: int) -> str:
+    result = last_agent_calculations.get(user_id)
+    if result is None:
+        return NO_AGENT_CALCULATION_TEXT
+    return format_agent_assignment_text(result)
+
+
 def _set_user_source(message: Message, source: str) -> None:
     if message.from_user is not None:
         user_rate_source[message.from_user.id] = source
@@ -170,6 +259,25 @@ def _get_user_source(message: Message) -> str:
     if message.from_user is None:
         return CBR_SOURCE
     return user_rate_source.get(message.from_user.id, CBR_SOURCE)
+
+
+def _is_agent_source(source: str) -> bool:
+    return source in {AGENT_CBR_SOURCE, AGENT_MARKET_SOURCE}
+
+
+def _agent_uses_market(source: str) -> bool:
+    return source == AGENT_MARKET_SOURCE or source == MARKET_SOURCE
+
+
+def _make_agent_request(request):
+    client_percent = request.percent
+    return replace(
+        request,
+        is_agent_calculation=True,
+        client_percent=client_percent,
+        main_rate_percent=client_percent - request.agent_fee_percent if client_percent is not None else None,
+        extra_payment_usd=request.extra_payment_amount,
+    )
 
 
 @router.message(F.text == CAPABILITIES_BUTTON)
@@ -222,11 +330,42 @@ async def choose_investing_calculation(message: Message, market_rate_provider) -
     )
 
 
+@router.message(F.text == AGENT_CBR_CALC_BUTTON)
+async def choose_agent_cbr_calculation(message: Message) -> None:
+    _set_user_source(message, AGENT_CBR_SOURCE)
+    await message.answer(
+        "🤝 Агентский расчёт по ЦБ РФ\n\n"
+        f"{AGENT_HINT_TEXT}"
+    )
+
+
+@router.message(F.text == AGENT_MARKET_CALC_BUTTON)
+async def choose_agent_market_calculation(message: Message, market_rate_provider) -> None:
+    try:
+        await market_rate_provider.get_rate("USD")
+    except MarketRateProviderError as exc:
+        await message.answer(str(exc))
+        return
+
+    _set_user_source(message, AGENT_MARKET_SOURCE)
+    await message.answer(
+        "🤝 Агентский расчёт по рынку\n\n"
+        f"{AGENT_HINT_TEXT}"
+    )
+
+
 @router.callback_query(F.data == "calc:new")
 async def new_calculation(callback: CallbackQuery) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
         await callback.message.answer(get_new_calculation_hint())
+
+
+@router.callback_query(F.data == "agent:assignment_text")
+async def show_agent_assignment_text(callback: CallbackQuery) -> None:
+    await callback.answer()
+    if callback.message is not None and hasattr(callback.message, "answer"):
+        await callback.message.answer(get_agent_assignment_text_for_user(callback.from_user.id))
 
 
 @router.callback_query(F.data == "main_menu")
@@ -256,11 +395,62 @@ async def convert_currency(
         await message.answer(UNKNOWN_CURRENCY_TEXT)
         return
 
+    active_source = _get_user_source(message)
+    is_agent_calculation = request.is_agent_calculation or _is_agent_source(active_source)
+    if is_agent_calculation:
+        request = _make_agent_request(request)
+        if request.is_reverse:
+            await message.answer(AGENT_REVERSE_UNSUPPORTED_TEXT)
+            return
+        if request.percent is None:
+            await message.answer(AGENT_PERCENT_REQUIRED_TEXT)
+            return
+        if request.percent <= request.agent_fee_percent:
+            await message.answer(AGENT_RATE_TOO_LOW_TEXT)
+            return
+
+        if _agent_uses_market(active_source):
+            rate_code = request.from_code
+            try:
+                rate_codes = [rate_code]
+                if request.extra_payment_usd is not None:
+                    rate_codes = list(dict.fromkeys([rate_code, "USD"]))
+                market_rates = await market_rate_provider.get_rates(rate_codes)
+                snapshot = market_rates_to_snapshot(market_rates)
+            except PairUnavailableError as exc:
+                await message.answer(str(exc))
+                return
+            except MarketRateProviderError as exc:
+                user_rate_source.pop(message.from_user.id, None) if message.from_user is not None else None
+                await message.answer(str(exc))
+                return
+            source = MARKET_SOURCE
+        else:
+            try:
+                snapshot = await cbr_service.get_latest_cbr_rates()
+                logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+                logger.info("CBR calculation uses latest cbr_date=%s", snapshot.date.isoformat())
+            except CBRServiceError:
+                logger.exception("Could not fetch CBR rates for agent converter")
+                await message.answer("Не удалось получить текущий курс ЦБ РФ. Попробуйте чуть позже.")
+                return
+            source = "ЦБ РФ — официальный курс"
+
+        result = convert_agent_calculation(request, snapshot, source=source)
+        if result is None:
+            await message.answer("Курс выбранной валюты сейчас недоступен. Попробуйте чуть позже.")
+            return
+
+        _save_last_agent_calculation(message, result)
+        await message.answer(
+            format_agent_calculation_result(result),
+            reply_markup=agent_calculation_keyboard(),
+        )
+        return
+
     if request.is_reverse and request.extra_payment_amount is not None:
         await message.answer(EXTRA_PAYMENT_REVERSE_UNSUPPORTED_TEXT)
         return
-
-    active_source = _get_user_source(message)
 
     if active_source == MARKET_SOURCE:
         rate_code = request.to_code if request.direction == "rub_to_currency" else request.from_code
@@ -291,9 +481,10 @@ async def convert_currency(
         )
         return
 
-    today = datetime.now(ZoneInfo(app_config.timezone)).date()
     try:
-        snapshot = await cbr_service.fetch_rates(today)
+        snapshot = await cbr_service.get_latest_cbr_rates()
+        logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+        logger.info("CBR calculation uses latest cbr_date=%s", snapshot.date.isoformat())
     except CBRServiceError:
         logger.exception("Could not fetch CBR rates for converter")
         await message.answer("Не удалось получить текущий курс ЦБ РФ. Попробуйте чуть позже.")

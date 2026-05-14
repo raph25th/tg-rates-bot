@@ -187,18 +187,18 @@ async def check_cbr_update_notifications(
     if not is_cbr_update_check_window(checked_at):
         return
 
-    target_date = checked_at.date() + timedelta(days=1)
     try:
-        snapshot = await cbr_service.fetch_rates(target_date)
+        snapshot = await cbr_service.get_latest_cbr_rates()
+        logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
     except Exception:
         logger.exception("CBR update notification fetch failed")
         return
 
-    if snapshot.date < target_date:
+    if snapshot.date <= checked_at.date():
         logger.info(
-            "CBR update is not published yet: fetched %s for target %s",
+            "CBR update is not published yet: fetched %s at %s",
             snapshot.date.isoformat(),
-            target_date.isoformat(),
+            checked_at.date().isoformat(),
         )
         return
 

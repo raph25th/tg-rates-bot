@@ -11,6 +11,9 @@ def assert_request(
     percent: str | None,
     direction: str,
     extra_payment: str | None = None,
+    is_agent: bool = False,
+    client_percent: str | None = None,
+    main_rate_percent: str | None = None,
 ) -> None:
     request = parse_conversion_request(text)
 
@@ -21,6 +24,11 @@ def assert_request(
     assert request.percent_adjustment == (Decimal(percent) if percent is not None else None)
     assert request.extra_payment_amount == (Decimal(extra_payment) if extra_payment is not None else None)
     assert request.direction == direction
+    assert request.is_agent_calculation is is_agent
+    assert request.client_percent == (Decimal(client_percent) if client_percent is not None else None)
+    assert request.main_rate_percent == (Decimal(main_rate_percent) if main_rate_percent is not None else None)
+    assert request.agent_fee_percent == Decimal("0.1")
+    assert request.extra_payment_usd == (Decimal(extra_payment) if extra_payment is not None else None)
 
 
 def test_parse_currency_to_rub_variants() -> None:
@@ -85,6 +93,43 @@ def test_parse_extra_payment_variants() -> None:
 
 def test_parse_extra_payment_for_rub_to_currency_keeps_direction() -> None:
     assert_request("1 000 000 rub в usd +100ПП", "1000000", "RUB", "USD", None, "rub_to_currency", "100")
+
+
+def test_parse_explicit_agent_variants() -> None:
+    cases = [
+        "10000 usd агент +2,5%",
+        "10000 usd agent +2.5%",
+        "10000 usd аг +2,5%",
+        "10000 usd агентский +2,5%",
+    ]
+
+    for text in cases:
+        assert_request(
+            text,
+            "10000",
+            "USD",
+            "RUB",
+            "2.5",
+            "currency_to_rub",
+            is_agent=True,
+            client_percent="2.5",
+            main_rate_percent="2.4",
+        )
+
+
+def test_parse_explicit_agent_with_extra_payment() -> None:
+    assert_request(
+        "10000 usd агент +2,5% +100ПП",
+        "10000",
+        "USD",
+        "RUB",
+        "2.5",
+        "currency_to_rub",
+        "100",
+        is_agent=True,
+        client_percent="2.5",
+        main_rate_percent="2.4",
+    )
 
 
 def test_parse_decimal_amounts() -> None:

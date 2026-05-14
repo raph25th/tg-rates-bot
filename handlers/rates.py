@@ -102,6 +102,16 @@ async def _fetch_rates_for_requested_date(
     return format_cbr_rates(rates, DEFAULT_RATE_ORDER), warning
 
 
+async def _fetch_latest_cbr_rates_text(
+    cbr_service: CBRService,
+    fetched_at: datetime,
+) -> tuple[str, date]:
+    snapshot = await cbr_service.get_latest_cbr_rates()
+    logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+    rates = rates_from_snapshot(snapshot, fetched_at=fetched_at, source="CBR")
+    return format_cbr_rates(rates, DEFAULT_RATE_ORDER), snapshot.date
+
+
 async def _answer_cbr_rates(
     message: Message,
     cbr_service: CBRService,
@@ -125,16 +135,42 @@ async def _answer_cbr_rates(
     await message.answer(text, reply_markup=cbr_after_rates_keyboard(), parse_mode="HTML")
 
 
+async def _answer_latest_cbr_rates(
+    message: Message,
+    cbr_service: CBRService,
+    app_config: Settings,
+) -> None:
+    timezone = ZoneInfo(app_config.timezone)
+    fetched_at = datetime.now(timezone)
+    try:
+        text, cbr_date = await _fetch_latest_cbr_rates_text(cbr_service, fetched_at)
+    except CBRServiceError:
+        logger.exception("Could not fetch latest CBR rates")
+        await message.answer("Не удалось получить курсы ЦБ РФ. Попробуйте чуть позже.")
+        return
+
+    logger.info("CBR rates screen uses latest cbr_date=%s", cbr_date.isoformat())
+    await message.answer(text, reply_markup=cbr_after_rates_keyboard(), parse_mode="HTML")
+
+
 @router.message(F.text == CBR_RATES_BUTTON)
-async def show_cbr_rates_button(message: Message) -> None:
-    await message.answer(_cbr_menu_text(), reply_markup=cbr_rates_menu_keyboard())
+async def show_cbr_rates_button(
+    message: Message,
+    cbr_service: CBRService,
+    app_config: Settings,
+) -> None:
+    await _answer_latest_cbr_rates(message, cbr_service, app_config)
 
 
 @router.callback_query(F.data == "cbr:menu")
-async def show_cbr_rates_menu(callback: CallbackQuery) -> None:
+async def show_cbr_rates_menu(
+    callback: CallbackQuery,
+    cbr_service: CBRService,
+    app_config: Settings,
+) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
-        await callback.message.answer(_cbr_menu_text(), reply_markup=cbr_rates_menu_keyboard())
+        await _answer_latest_cbr_rates(callback.message, cbr_service, app_config)
 
 
 @router.callback_query(F.data == "cbr:today")
@@ -147,8 +183,7 @@ async def show_cbr_rates_today(
     if not isinstance(callback.message, Message):
         return
 
-    today = datetime.now(ZoneInfo(app_config.timezone)).date()
-    await _answer_cbr_rates(callback.message, cbr_service, app_config, today, warn_on_fallback=False)
+    await _answer_latest_cbr_rates(callback.message, cbr_service, app_config)
 
 
 @router.callback_query(F.data == "cbr:choose_date")
@@ -207,7 +242,8 @@ async def answer_spread(
     timezone = ZoneInfo(app_config.timezone)
     fetched_at = datetime.now(timezone)
     try:
-        snapshot = await cbr_service.fetch_rates(fetched_at.date())
+        snapshot = await cbr_service.get_latest_cbr_rates()
+        logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
     except CBRServiceError:
         logger.exception("Could not fetch CBR rates for spread")
         await message.answer(CBR_SPREAD_UNAVAILABLE_TEXT)
