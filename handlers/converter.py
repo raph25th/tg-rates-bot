@@ -417,8 +417,6 @@ async def convert_currency(
             rate_code = request.from_code
             try:
                 rate_codes = [rate_code]
-                if request.extra_payment_usd is not None:
-                    rate_codes = list(dict.fromkeys([rate_code, "USD"]))
                 market_rates = await market_rate_provider.get_rates(rate_codes)
                 snapshot = market_rates_to_snapshot(market_rates)
             except PairUnavailableError as exc:

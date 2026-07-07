@@ -138,6 +138,9 @@ class FakeCbrService:
 
 
 class FakeMarketProvider:
+    def __init__(self) -> None:
+        self.requests: list[list[str]] = []
+
     async def get_rate(self, code: str):
         return MarketRate(
             code=code,
@@ -148,6 +151,7 @@ class FakeMarketProvider:
         )
 
     async def get_rates(self, codes: list[str]):
+        self.requests.append(list(codes))
         values = {
             "USD": Decimal("74.8850"),
             "CNY": Decimal("10.9672"),
@@ -335,20 +339,22 @@ async def test_agent_cbr_mode_calculates_without_agent_word() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_market_mode_calculates_cny_with_usd_extra_without_agent_word() -> None:
+async def test_agent_market_mode_calculates_cny_with_pp_without_agent_word() -> None:
     user_rate_source[1001] = AGENT_MARKET_SOURCE
     last_agent_calculations.pop(1001, None)
     message = FakeMessage("50200 CNY +2,5% +200ПП")
+    market_provider = FakeMarketProvider()
 
     try:
         await convert_currency_handler(
             message,
             cbr_service=FakeCbrService(),
             app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
-            market_rate_provider=FakeMarketProvider(),
+            market_rate_provider=market_provider,
         )
 
         text, keyboard = message.answers[0]
+        assert market_provider.requests == [["CNY"]]
         assert text.startswith("Агентский расчёт на 05.05.2026")
         assert "Сумма инвойса:\n50 200 CNY" in text
         assert "2,5% + 200 CNY = 2,4% + 0,1% + 200 CNY" in text
