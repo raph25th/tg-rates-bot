@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_plain_amount, format_rate
@@ -19,6 +19,7 @@ SUPPORTED_CALCULATOR_CURRENCIES = SUPPORTED_CURRENCIES
 DEFAULT_CBR_SOURCE = "ЦБ РФ — официальный курс"
 MARKET_RATE_NOTICE = "Рыночный курс является ориентиром и может отличаться от банков, обменников и торговых платформ."
 AGENT_FEE_PERCENT = Decimal("0.1")
+RATE_QUANT = Decimal("0.0001")
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,10 @@ def apply_percent(unit_rate: Decimal, percent: Decimal | None) -> Decimal:
     return unit_rate * (Decimal("1") + percent / Decimal("100"))
 
 
+def round_rate_for_calculation(unit_rate: Decimal) -> Decimal:
+    return unit_rate.quantize(RATE_QUANT, rounding=ROUND_HALF_UP)
+
+
 def convert_currency(
     request: ConvertRequest,
     snapshot: RatesSnapshot,
@@ -210,7 +215,7 @@ def convert_agent_calculation(
     extra_payment_usd = request.extra_payment_usd or request.extra_payment_amount
 
     main_rate_percent = client_percent - agent_fee_percent
-    adjusted_rate = apply_percent(rate.unit_rate, main_rate_percent)
+    adjusted_rate = round_rate_for_calculation(apply_percent(rate.unit_rate, main_rate_percent))
 
     invoice_base_rub = None
     cross_rate = None
@@ -225,8 +230,8 @@ def convert_agent_calculation(
         extra_payment_rub = extra_payment_usd * adjusted_extra_payment_rate
         cross_rate = (invoice_base_rub + extra_payment_rub) / request.amount
         calculation_rate = apply_percent(cross_rate, main_rate_percent)
-        adjusted_rate = calculation_rate
-        main_currency_payment_rub = request.amount * calculation_rate
+        adjusted_rate = round_rate_for_calculation(calculation_rate)
+        main_currency_payment_rub = request.amount * adjusted_rate
         main_payment_rub = main_currency_payment_rub
 
     agent_fee_rub = main_payment_rub * agent_fee_percent / Decimal("100")

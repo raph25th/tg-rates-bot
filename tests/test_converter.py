@@ -139,15 +139,15 @@ def test_agent_calculation_usd_with_extra_payment() -> None:
     result = convert_agent_calculation(request, snapshot)
 
     assert result is not None
-    assert result.adjusted_unit_rate == Decimal("77.5864320000")
-    assert result.adjusted_extra_payment_unit_rate == Decimal("76.8000000")
+    assert result.adjusted_unit_rate == Decimal("77.5864")
+    assert result.adjusted_extra_payment_unit_rate == Decimal("76.8000")
     assert result.invoice_base_rub == Decimal("750000.0000")
     assert result.cross_rate == Decimal("75.7680000")
-    assert result.main_currency_payment_rub == Decimal("775864.3200000000")
+    assert result.main_currency_payment_rub == Decimal("775864.0000")
     assert result.extra_payment_rub == Decimal("7680.000000")
-    assert result.main_payment_rub == Decimal("775864.3200000000")
-    assert result.agent_fee_rub == Decimal("775.86432000000")
-    assert result.final_result == Decimal("776640.18432000000")
+    assert result.main_payment_rub == Decimal("775864.0000")
+    assert result.agent_fee_rub == Decimal("775.86400")
+    assert result.final_result == Decimal("776639.86400")
 
 
 def test_agent_calculation_cny_with_extra_payment() -> None:
@@ -165,15 +165,15 @@ def test_agent_calculation_cny_with_extra_payment() -> None:
     result = convert_agent_calculation(request, snapshot)
 
     assert result is not None
-    assert result.adjusted_unit_rate == Decimal("11.25854465019920318725099602")
-    assert result.adjusted_extra_payment_unit_rate == Decimal("11.2128000")
+    assert result.adjusted_unit_rate == Decimal("11.2585")
+    assert result.adjusted_extra_payment_unit_rate == Decimal("11.2128")
     assert result.invoice_base_rub == Decimal("549690.0000")
-    assert result.extra_payment_rub == Decimal("2242.5600000")
+    assert result.extra_payment_rub == Decimal("2242.5600")
     assert result.cross_rate == Decimal("10.99467250996015936254980080")
-    assert result.main_currency_payment_rub == Decimal("565178.9414400000000000000002")
-    assert result.main_payment_rub == Decimal("565178.9414400000000000000002")
-    assert result.agent_fee_rub == Decimal("565.1789414400000000000000002")
-    assert result.final_result == Decimal("565744.1203814400000000000002")
+    assert result.main_currency_payment_rub == Decimal("565176.7000")
+    assert result.main_payment_rub == Decimal("565176.7000")
+    assert result.agent_fee_rub == Decimal("565.17670")
+    assert result.final_result == Decimal("565741.87670")
 
 
 def test_convert_rub_to_currency() -> None:
@@ -548,17 +548,17 @@ def test_format_agent_calculation_text_target_usd_without_extra_payment() -> Non
         "76,1258 + 2,4% = 77,9528 RUB\n"
         "\n"
         "Основной платёж:\n"
-        "45 250 USD × 77,9528 = 3 527 365,07 RUB\n"
+        "45 250 USD × 77,9528 = 3 527 364,20 RUB\n"
         "\n"
         "Агентское вознаграждение:\n"
-        "3 527 365,07 RUB × 0,1% = 3 527,37 RUB\n"
+        "3 527 364,20 RUB × 0,1% = 3 527,36 RUB\n"
         "\n"
         "Итого:\n"
-        "Основной платёж: 3 527 365,07 RUB\n"
-        "Агентское вознаграждение: 3 527,37 RUB\n"
+        "Основной платёж: 3 527 364,20 RUB\n"
+        "Агентское вознаграждение: 3 527,36 RUB\n"
         "\n"
         "Итоговая сумма:\n"
-        "3 530 892,43 RUB"
+        "3 530 891,56 RUB"
     )
     assert "Курс для расчёта ПП" not in formatted
     assert "Кросс-курс" not in formatted
@@ -587,9 +587,14 @@ def test_format_agent_calculation_text_target_usd_with_extra_payment_cross_rate(
     assert "100 USD × 77,9528 = 7 795,28 RUB" in formatted
     assert "(3 444 692,45 RUB + 7 795,28 RUB) / 45 250 USD = 76,2981 RUB" in formatted
     assert "Расчётный курс:\n76,2981 + 2,4% = 78,1292 RUB" in formatted
-    assert "45 250 USD × 78,1292 = 3 535 347,44 RUB" in formatted
-    assert "3 535 347,44 RUB × 0,1% = 3 535,35 RUB" in formatted
-    assert "Итоговая сумма:\n3 538 882,78 RUB" in formatted
+    assert result.adjusted_unit_rate == Decimal("78.1292")
+    assert result.main_payment_rub == Decimal("3535346.3000")
+    assert result.agent_fee_rub == Decimal("3535.34630")
+    assert result.final_result == Decimal("3538881.64630")
+    assert "45 250 USD × 78,1292 = 3 535 346,30 RUB" in formatted
+    assert "3 535 347,44 RUB" not in formatted
+    assert "3 535 346,30 RUB × 0,1% = 3 535,35 RUB" in formatted
+    assert "Итоговая сумма:\n3 538 881,65 RUB" in formatted
 
 
 def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
@@ -614,10 +619,10 @@ def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
     assert "100 USD × 76,8000 = 7 680,00 RUB" in formatted
     assert "(750 000,00 RUB + 7 680,00 RUB) / 10 000 USD = 75,7680 RUB" in formatted
     assert "Расчётный курс:\n75,7680 + 2,4% = 77,5864 RUB" in formatted
-    assert "10 000 USD × 77,5864 = 775 864,32 RUB" in formatted
-    assert "Итого основной платёж:\n775 864,32 RUB" in formatted
-    assert "775 864,32 RUB × 0,1% = 775,86 RUB" in formatted
-    assert "Итоговая сумма:\n776 640,18 RUB" in formatted
+    assert "10 000 USD × 77,5864 = 775 864,00 RUB" in formatted
+    assert "Итого основной платёж:\n775 864,00 RUB" in formatted
+    assert "775 864,00 RUB × 0,1% = 775,86 RUB" in formatted
+    assert "Итоговая сумма:\n776 639,86 RUB" in formatted
     assert "Платёжка" not in formatted
 
 
@@ -645,10 +650,10 @@ def test_format_agent_calculation_text_cny_with_extra_payment() -> None:
     assert "200 CNY × 11,2128 = 2 242,56 RUB" in formatted
     assert "(549 690,00 RUB + 2 242,56 RUB) / 50 200 CNY = 10,9947 RUB" in formatted
     assert "Расчётный курс:\n10,9947 + 2,4% = 11,2585 RUB" in formatted
-    assert "50 200 CNY × 11,2585 = 565 178,94 RUB" in formatted
-    assert "Итого основной платёж:\n565 178,94 RUB" in formatted
-    assert "565 178,94 RUB × 0,1% = 565,18 RUB" in formatted
-    assert "Итоговая сумма:\n565 744,12 RUB" in formatted
+    assert "50 200 CNY × 11,2585 = 565 176,70 RUB" in formatted
+    assert "Итого основной платёж:\n565 176,70 RUB" in formatted
+    assert "565 176,70 RUB × 0,1% = 565,18 RUB" in formatted
+    assert "Итоговая сумма:\n565 741,88 RUB" in formatted
     assert "Платёжка" not in formatted
     assert "Корректировка" not in formatted
     assert "Источник" not in formatted

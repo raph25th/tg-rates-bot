@@ -364,7 +364,7 @@ async def test_agent_market_mode_calculates_cny_with_pp_without_agent_word() -> 
         assert "200 CNY × 11,2304 = 2 246,08 RUB" in text
         assert "(550 553,44 RUB + 2 246,08 RUB) / 50 200 CNY = 11,0119 RUB" in text
         assert "Расчётный курс:\n11,0119 + 2,4% = 11,2762 RUB" in text
-        assert "50 200 CNY × 11,2762 = 566 066,71 RUB" in text
+        assert "50 200 CNY × 11,2762 = 566 065,24 RUB" in text
         assert "Платёжка" not in text
         assert "Корректировка" not in text
         assert keyboard is not None
@@ -397,16 +397,16 @@ def test_format_agent_assignment_text_uses_amounts_and_words() -> None:
         "1 USD = 77,5864 RUB\n"
         "\n"
         "Основной платёж:\n"
-        "775 864,32 RUB\n"
-        "Семьсот семьдесят пять тысяч восемьсот шестьдесят четыре рубля 32 копейки\n"
+        "775 864,00 RUB\n"
+        "Семьсот семьдесят пять тысяч восемьсот шестьдесят четыре рубля 00 копеек\n"
         "\n"
         "Агентское вознаграждение:\n"
         "775,86 RUB\n"
         "Семьсот семьдесят пять рублей 86 копеек\n"
         "\n"
         "Итоговая сумма:\n"
-        "776 640,18 RUB\n"
-        "Семьсот семьдесят шесть тысяч шестьсот сорок рублей 18 копеек"
+        "776 639,86 RUB\n"
+        "Семьсот семьдесят шесть тысяч шестьсот тридцать девять рублей 86 копеек"
     )
     assert "Доп. платёж" not in text
     assert "ПП" not in text
