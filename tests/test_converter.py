@@ -476,20 +476,16 @@ def test_format_agent_calculation_text_usd_without_extra_payment() -> None:
     formatted = format_agent_calculation_result(result)
 
     assert formatted == (
-        "Агентский расчёт:\n"
-        "15.05.2026\n"
-        "\n"
-        "Сумма:\n"
-        "10 000 USD\n"
+        "Агентский расчёт на 15.05.2026\n"
         "\n"
         "Актуальный курс:\n"
         "1 USD = 75,0000 RUB\n"
         "\n"
+        "Сумма инвойса:\n"
+        "10 000 USD\n"
+        "\n"
         "Ставка клиенту:\n"
         "2,5% = 2,4% + 0,1%\n"
-        "\n"
-        "Курс в поручении:\n"
-        "1 USD = 76,8000 RUB\n"
         "\n"
         "Расчётный курс:\n"
         "75,0000 + 2,4% = 76,8000 RUB\n"
@@ -508,6 +504,8 @@ def test_format_agent_calculation_text_usd_without_extra_payment() -> None:
         "768 768,00 RUB"
     )
     assert "Дата курса:" not in formatted
+    assert "Курс в поручении" not in formatted
+    assert "Фиксированное ПП" not in formatted
     assert "ПП" not in formatted
     assert "Платёжка" not in formatted
     assert "Корректировка" not in formatted
@@ -533,12 +531,11 @@ def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
     assert "Курс в поручении:\n1 USD = 77,5680 RUB" in formatted
     assert "75,0000 + 2,4% = 76,8000 RUB" in formatted
     assert "10 000 USD × 76,8000 = 768 000,00 RUB" in formatted
-    assert "100 USD × 76,8000 = 7 680,00 RUB" in formatted
-    assert "Итого основной платёж: 775 680,00 RUB" in formatted
+    assert "Фиксированное ПП:\n100 USD × 76,8000 = 7 680,00 RUB" in formatted
+    assert "Итого основной платёж:\n775 680,00 RUB" in formatted
     assert "775 680,00 RUB × 0,1% = 775,68 RUB" in formatted
     assert "Итоговая сумма:\n776 455,68 RUB" in formatted
     assert "Курс USD для доп. платежа" not in formatted
-    assert "ПП" not in formatted
     assert "Платёжка" not in formatted
 
 
@@ -558,17 +555,16 @@ def test_format_agent_calculation_text_cny_with_extra_payment() -> None:
 
     formatted = format_agent_calculation_result(result)
 
-    assert "Агентский расчёт:\n15.05.2026" in formatted
+    assert "Агентский расчёт на 15.05.2026" in formatted
     assert "2,5% + 200 USD = 2,4% + 0,1% + 200 USD" in formatted
     assert "Курс в поручении:\n1 CNY = 11,5188 RUB" in formatted
     assert "10,9500 + 2,4% = 11,2128 RUB" in formatted
     assert "Курс USD для доп. платежа:\n75,0000 + 2,4% = 76,8000 RUB" in formatted
     assert "50 200 CNY × 11,2128 = 562 882,56 RUB" in formatted
-    assert "200 USD × 76,8000 = 15 360,00 RUB" in formatted
-    assert "Итого основной платёж: 578 242,56 RUB" in formatted
+    assert "Фиксированное ПП:\n200 USD × 76,8000 = 15 360,00 RUB" in formatted
+    assert "Итого основной платёж:\n578 242,56 RUB" in formatted
     assert "578 242,56 RUB × 0,1% = 578,24 RUB" in formatted
     assert "Итоговая сумма:\n578 820,80 RUB" in formatted
-    assert "ПП" not in formatted
     assert "Платёжка" not in formatted
     assert "Корректировка" not in formatted
     assert "Источник" not in formatted

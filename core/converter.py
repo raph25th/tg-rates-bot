@@ -351,14 +351,13 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
     request = result.request
     rate = result.rate
     lines = [
-        "Агентский расчёт:",
-        rate.date.strftime("%d.%m.%Y"),
-        "",
-        "Сумма:",
-        format_input_amount(request),
+        f"Агентский расчёт на {rate.date.strftime('%d.%m.%Y')}",
         "",
         "Актуальный курс:",
         f"1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
+        "",
+        "Сумма инвойса:",
+        format_input_amount(request),
         "",
         "Ставка клиенту:",
     ]
@@ -374,9 +373,6 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
 
     lines.extend(
         [
-            "",
-            "Курс в поручении:",
-            format_agent_assignment_rate(result),
             "",
             "Расчётный курс:",
             f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
@@ -408,8 +404,15 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
         usd_rate = result.adjusted_extra_payment_unit_rate or result.adjusted_unit_rate
         lines.extend(
             [
+                "",
+                "Фиксированное ПП:",
                 f"{format_plain_amount(result.extra_payment_usd)} USD × {format_rate(usd_rate)} = {format_rub(result.extra_payment_rub)}",
-                f"Итого основной платёж: {format_rub(result.main_payment_rub)}",
+                "",
+                "Итого основной платёж:",
+                format_rub(result.main_payment_rub),
+                "",
+                "Курс в поручении:",
+                format_agent_assignment_rate(result),
             ]
         )
 

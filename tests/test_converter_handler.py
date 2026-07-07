@@ -314,9 +314,11 @@ async def test_agent_cbr_mode_calculates_without_agent_word() -> None:
         )
 
         text, keyboard = message.answers[0]
-        assert text.startswith("Агентский расчёт:\n05.05.2026")
+        assert text.startswith("Агентский расчёт на 05.05.2026")
+        assert "Сумма инвойса:\n10 000 USD" in text
         assert "2,5% = 2,4% + 0,1%" in text
-        assert "Курс в поручении:\n1 USD = 76,8000 RUB" in text
+        assert "Курс в поручении" not in text
+        assert "Фиксированное ПП" not in text
         assert "10 000 USD × 76,8000 = 768 000,00 RUB" in text
         assert "Итоговая сумма:\n768 768,00 RUB" in text
         assert keyboard is not None
@@ -347,13 +349,13 @@ async def test_agent_market_mode_calculates_cny_with_usd_extra_without_agent_wor
         )
 
         text, keyboard = message.answers[0]
-        assert text.startswith("Агентский расчёт:\n05.05.2026")
+        assert text.startswith("Агентский расчёт на 05.05.2026")
+        assert "Сумма инвойса:\n50 200 CNY" in text
         assert "2,5% + 200 USD = 2,4% + 0,1% + 200 USD" in text
         assert "Курс в поручении:\n1 CNY = 11,5359 RUB" in text
         assert "10,9672 + 2,4% = 11,2304 RUB" in text
         assert "Курс USD для доп. платежа:\n74,8850 + 2,4% = 76,6822 RUB" in text
-        assert "200 USD × 76,6822 = 15 336,45 RUB" in text
-        assert "ПП" not in text
+        assert "Фиксированное ПП:\n200 USD × 76,6822 = 15 336,45 RUB" in text
         assert "Платёжка" not in text
         assert "Корректировка" not in text
         assert keyboard is not None
