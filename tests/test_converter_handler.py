@@ -351,11 +351,14 @@ async def test_agent_market_mode_calculates_cny_with_usd_extra_without_agent_wor
         text, keyboard = message.answers[0]
         assert text.startswith("Агентский расчёт на 05.05.2026")
         assert "Сумма инвойса:\n50 200 CNY" in text
-        assert "2,5% + 200 USD = 2,4% + 0,1% + 200 USD" in text
-        assert "Курс в поручении:\n1 CNY = 11,5359 RUB" in text
-        assert "10,9672 + 2,4% = 11,2304 RUB" in text
-        assert "Курс USD для доп. платежа:\n74,8850 + 2,4% = 76,6822 RUB" in text
-        assert "Фиксированное ПП:\n200 USD × 76,6822 = 15 336,45 RUB" in text
+        assert "2,5% + 200 CNY = 2,4% + 0,1% + 200 CNY" in text
+        assert "Курс для расчёта ПП:\n10,9672 + 2,4% = 11,2304 RUB" in text
+        assert "Кросс-курс с учётом 200 CNY:" in text
+        assert "50 200 CNY × 10,9672 = 550 553,44 RUB" in text
+        assert "200 CNY × 11,2304 = 2 246,08 RUB" in text
+        assert "(550 553,44 RUB + 2 246,08 RUB) / 50 200 CNY = 11,0119 RUB" in text
+        assert "Расчётный курс:\n11,0119 + 2,4% = 11,2762 RUB" in text
+        assert "50 200 CNY × 11,2762 = 566 066,71 RUB" in text
         assert "Платёжка" not in text
         assert "Корректировка" not in text
         assert keyboard is not None
@@ -365,7 +368,8 @@ async def test_agent_market_mode_calculates_cny_with_usd_extra_without_agent_wor
         ]
         saved_result = last_agent_calculations[1001]
         assert saved_result.extra_payment_rub is not None
-        assert saved_result.main_payment_rub == saved_result.main_currency_payment_rub + saved_result.extra_payment_rub
+        assert saved_result.main_payment_rub == saved_result.main_currency_payment_rub
+        assert saved_result.cross_rate is not None
     finally:
         user_rate_source.pop(1001, None)
         last_agent_calculations.pop(1001, None)
@@ -384,19 +388,19 @@ def test_format_agent_assignment_text_uses_amounts_and_words() -> None:
         "Версия для поручения:\n"
         "\n"
         "Курс в поручении:\n"
-        "1 USD = 77,5680 RUB\n"
+        "1 USD = 77,5864 RUB\n"
         "\n"
         "Основной платёж:\n"
-        "775 680,00 RUB\n"
-        "Семьсот семьдесят пять тысяч шестьсот восемьдесят рублей 00 копеек\n"
+        "775 864,32 RUB\n"
+        "Семьсот семьдесят пять тысяч восемьсот шестьдесят четыре рубля 32 копейки\n"
         "\n"
         "Агентское вознаграждение:\n"
-        "775,68 RUB\n"
-        "Семьсот семьдесят пять рублей 68 копеек\n"
+        "775,86 RUB\n"
+        "Семьсот семьдесят пять рублей 86 копеек\n"
         "\n"
         "Итоговая сумма:\n"
-        "776 455,68 RUB\n"
-        "Семьсот семьдесят шесть тысяч четыреста пятьдесят пять рублей 68 копеек"
+        "776 640,18 RUB\n"
+        "Семьсот семьдесят шесть тысяч шестьсот сорок рублей 18 копеек"
     )
     assert "Доп. платёж" not in text
     assert "ПП" not in text

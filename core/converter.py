@@ -76,6 +76,8 @@ class AgentCalculationResult:
     extra_payment_rate: CurrencyRate | None
     adjusted_extra_payment_unit_rate: Decimal | None
     extra_payment_rub: Decimal | None
+    invoice_base_rub: Decimal | None
+    cross_rate: Decimal | None
     main_payment_rub: Decimal
     agent_fee_rub: Decimal
     final_result: Decimal
@@ -206,24 +208,27 @@ def convert_agent_calculation(
         return None
 
     extra_payment_usd = request.extra_payment_usd or request.extra_payment_amount
-    extra_payment_rate = snapshot.rates.get("USD") if extra_payment_usd is not None else None
-    if extra_payment_usd is not None and extra_payment_rate is None:
-        return None
 
     main_rate_percent = client_percent - agent_fee_percent
     adjusted_rate = apply_percent(rate.unit_rate, main_rate_percent)
-    main_currency_payment_rub = request.amount * adjusted_rate
-    adjusted_extra_payment_rate = (
-        apply_percent(extra_payment_rate.unit_rate, main_rate_percent)
-        if extra_payment_rate is not None
-        else None
-    )
-    extra_payment_rub = (
-        extra_payment_usd * adjusted_extra_payment_rate
-        if extra_payment_usd is not None and adjusted_extra_payment_rate is not None
-        else None
-    )
-    main_payment_rub = main_currency_payment_rub + (extra_payment_rub or Decimal("0"))
+
+    invoice_base_rub = None
+    cross_rate = None
+    extra_payment_rub = None
+    if extra_payment_usd is None:
+        main_currency_payment_rub = request.amount * adjusted_rate
+        main_payment_rub = main_currency_payment_rub
+        adjusted_extra_payment_rate = None
+    else:
+        invoice_base_rub = request.amount * rate.unit_rate
+        adjusted_extra_payment_rate = adjusted_rate
+        extra_payment_rub = extra_payment_usd * adjusted_extra_payment_rate
+        cross_rate = (invoice_base_rub + extra_payment_rub) / request.amount
+        calculation_rate = apply_percent(cross_rate, main_rate_percent)
+        adjusted_rate = calculation_rate
+        main_currency_payment_rub = request.amount * calculation_rate
+        main_payment_rub = main_currency_payment_rub
+
     agent_fee_rub = main_payment_rub * agent_fee_percent / Decimal("100")
     final_result = main_payment_rub + agent_fee_rub
 
@@ -236,9 +241,11 @@ def convert_agent_calculation(
         agent_fee_percent=agent_fee_percent,
         main_currency_payment_rub=main_currency_payment_rub,
         extra_payment_usd=extra_payment_usd,
-        extra_payment_rate=extra_payment_rate,
+        extra_payment_rate=rate if extra_payment_usd is not None else None,
         adjusted_extra_payment_unit_rate=adjusted_extra_payment_rate,
         extra_payment_rub=extra_payment_rub,
+        invoice_base_rub=invoice_base_rub,
+        cross_rate=cross_rate,
         main_payment_rub=main_payment_rub,
         agent_fee_rub=agent_fee_rub,
         final_result=final_result,
@@ -368,28 +375,41 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
     if result.extra_payment_usd is None:
         lines.append(f"{client_percent} = {main_percent} + {agent_percent}")
     else:
-        extra_text = f"{format_plain_amount(result.extra_payment_usd)} USD"
+        extra_text = f"{format_plain_amount(result.extra_payment_usd)} {rate.code}"
         lines.append(f"{client_percent} + {extra_text} = {main_percent} + {agent_percent} + {extra_text}")
 
     lines.extend(
         [
             "",
-            "Расчётный курс:",
-            f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
         ]
     )
 
-    if (
-        result.extra_payment_usd is not None
-        and rate.code != "USD"
-        and result.adjusted_extra_payment_unit_rate is not None
-        and result.extra_payment_rate is not None
-    ):
+    if result.extra_payment_usd is None:
         lines.extend(
             [
+                "Расчётный курс:",
+                f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
+            ]
+        )
+    elif (
+        result.adjusted_extra_payment_unit_rate is not None
+        and result.extra_payment_rub is not None
+        and result.invoice_base_rub is not None
+        and result.cross_rate is not None
+    ):
+        fixed_pp_text = f"{format_plain_amount(result.extra_payment_usd)} {rate.code}"
+        lines.extend(
+            [
+                "Курс для расчёта ПП:",
+                f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_extra_payment_unit_rate)} RUB",
                 "",
-                "Курс USD для доп. платежа:",
-                f"{format_rate(result.extra_payment_rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_extra_payment_unit_rate)} RUB",
+                f"Кросс-курс с учётом {fixed_pp_text}:",
+                f"{format_input_amount(request)} × {format_rate(rate.unit_rate)} = {format_rub(result.invoice_base_rub)}",
+                f"{fixed_pp_text} × {format_rate(result.adjusted_extra_payment_unit_rate)} = {format_rub(result.extra_payment_rub)}",
+                f"({format_rub(result.invoice_base_rub)} + {format_rub(result.extra_payment_rub)}) / {format_input_amount(request)} = {format_rate(result.cross_rate)} RUB",
+                "",
+                "Расчётный курс:",
+                f"{format_rate(result.cross_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
             ]
         )
 
@@ -400,19 +420,12 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
             f"{format_input_amount(request)} × {format_rate(result.adjusted_unit_rate)} = {format_rub(result.main_currency_payment_rub)}",
         ]
     )
-    if result.extra_payment_usd is not None and result.extra_payment_rub is not None:
-        usd_rate = result.adjusted_extra_payment_unit_rate or result.adjusted_unit_rate
+    if result.extra_payment_usd is not None:
         lines.extend(
             [
                 "",
-                "Фиксированное ПП:",
-                f"{format_plain_amount(result.extra_payment_usd)} USD × {format_rate(usd_rate)} = {format_rub(result.extra_payment_rub)}",
-                "",
                 "Итого основной платёж:",
                 format_rub(result.main_payment_rub),
-                "",
-                "Курс в поручении:",
-                format_agent_assignment_rate(result),
             ]
         )
 

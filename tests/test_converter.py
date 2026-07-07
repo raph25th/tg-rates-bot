@@ -139,12 +139,15 @@ def test_agent_calculation_usd_with_extra_payment() -> None:
     result = convert_agent_calculation(request, snapshot)
 
     assert result is not None
-    assert result.adjusted_unit_rate == Decimal("76.800000")
-    assert result.main_currency_payment_rub == Decimal("768000.000000")
+    assert result.adjusted_unit_rate == Decimal("77.5864320000")
+    assert result.adjusted_extra_payment_unit_rate == Decimal("76.8000000")
+    assert result.invoice_base_rub == Decimal("750000.0000")
+    assert result.cross_rate == Decimal("75.7680000")
+    assert result.main_currency_payment_rub == Decimal("775864.3200000000")
     assert result.extra_payment_rub == Decimal("7680.000000")
-    assert result.main_payment_rub == Decimal("775680.000000")
-    assert result.agent_fee_rub == Decimal("775.6800000")
-    assert result.final_result == Decimal("776455.6800000")
+    assert result.main_payment_rub == Decimal("775864.3200000000")
+    assert result.agent_fee_rub == Decimal("775.86432000000")
+    assert result.final_result == Decimal("776640.18432000000")
 
 
 def test_agent_calculation_cny_with_extra_payment() -> None:
@@ -162,13 +165,15 @@ def test_agent_calculation_cny_with_extra_payment() -> None:
     result = convert_agent_calculation(request, snapshot)
 
     assert result is not None
-    assert result.adjusted_unit_rate == Decimal("11.212800")
-    assert result.adjusted_extra_payment_unit_rate == Decimal("76.800000")
-    assert result.main_currency_payment_rub == Decimal("562882.560000")
-    assert result.extra_payment_rub == Decimal("15360.000000")
-    assert result.main_payment_rub == Decimal("578242.560000")
-    assert result.agent_fee_rub == Decimal("578.2425600")
-    assert result.final_result == Decimal("578820.8025600")
+    assert result.adjusted_unit_rate == Decimal("11.25854465019920318725099602")
+    assert result.adjusted_extra_payment_unit_rate == Decimal("11.2128000")
+    assert result.invoice_base_rub == Decimal("549690.0000")
+    assert result.extra_payment_rub == Decimal("2242.5600000")
+    assert result.cross_rate == Decimal("10.99467250996015936254980080")
+    assert result.main_currency_payment_rub == Decimal("565178.9414400000000000000002")
+    assert result.main_payment_rub == Decimal("565178.9414400000000000000002")
+    assert result.agent_fee_rub == Decimal("565.1789414400000000000000002")
+    assert result.final_result == Decimal("565744.1203814400000000000002")
 
 
 def test_convert_rub_to_currency() -> None:
@@ -512,6 +517,81 @@ def test_format_agent_calculation_text_usd_without_extra_payment() -> None:
     assert "₽" not in formatted
 
 
+def test_format_agent_calculation_text_target_usd_without_extra_payment() -> None:
+    rate_date = date(2026, 7, 8)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("76.1258"), Decimal("76.1258"), rate_date),
+        },
+    )
+    request = parse_convert_request("45250 usd агент +2,5%")
+    assert request is not None
+    result = convert_agent_calculation(request, snapshot)
+    assert result is not None
+
+    formatted = format_agent_calculation_result(result)
+
+    assert formatted == (
+        "Агентский расчёт на 08.07.2026\n"
+        "\n"
+        "Актуальный курс:\n"
+        "1 USD = 76,1258 RUB\n"
+        "\n"
+        "Сумма инвойса:\n"
+        "45 250 USD\n"
+        "\n"
+        "Ставка клиенту:\n"
+        "2,5% = 2,4% + 0,1%\n"
+        "\n"
+        "Расчётный курс:\n"
+        "76,1258 + 2,4% = 77,9528 RUB\n"
+        "\n"
+        "Основной платёж:\n"
+        "45 250 USD × 77,9528 = 3 527 365,07 RUB\n"
+        "\n"
+        "Агентское вознаграждение:\n"
+        "3 527 365,07 RUB × 0,1% = 3 527,37 RUB\n"
+        "\n"
+        "Итого:\n"
+        "Основной платёж: 3 527 365,07 RUB\n"
+        "Агентское вознаграждение: 3 527,37 RUB\n"
+        "\n"
+        "Итоговая сумма:\n"
+        "3 530 892,43 RUB"
+    )
+    assert "Курс для расчёта ПП" not in formatted
+    assert "Кросс-курс" not in formatted
+
+
+def test_format_agent_calculation_text_target_usd_with_extra_payment_cross_rate() -> None:
+    rate_date = date(2026, 7, 8)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("76.1258"), Decimal("76.1258"), rate_date),
+        },
+    )
+    request = parse_convert_request("45250 usd агент +2,5% +100ПП")
+    assert request is not None
+    result = convert_agent_calculation(request, snapshot)
+    assert result is not None
+
+    formatted = format_agent_calculation_result(result)
+
+    assert "Агентский расчёт на 08.07.2026" in formatted
+    assert "Сумма инвойса:\n45 250 USD" in formatted
+    assert "Курс для расчёта ПП:\n76,1258 + 2,4% = 77,9528 RUB" in formatted
+    assert "Кросс-курс с учётом 100 USD:" in formatted
+    assert "45 250 USD × 76,1258 = 3 444 692,45 RUB" in formatted
+    assert "100 USD × 77,9528 = 7 795,28 RUB" in formatted
+    assert "(3 444 692,45 RUB + 7 795,28 RUB) / 45 250 USD = 76,2981 RUB" in formatted
+    assert "Расчётный курс:\n76,2981 + 2,4% = 78,1292 RUB" in formatted
+    assert "45 250 USD × 78,1292 = 3 535 347,44 RUB" in formatted
+    assert "3 535 347,44 RUB × 0,1% = 3 535,35 RUB" in formatted
+    assert "Итоговая сумма:\n3 538 882,78 RUB" in formatted
+
+
 def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
     rate_date = date(2026, 5, 15)
     snapshot = RatesSnapshot(
@@ -528,14 +608,16 @@ def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
     formatted = format_agent_calculation_result(result)
 
     assert "2,5% + 100 USD = 2,4% + 0,1% + 100 USD" in formatted
-    assert "Курс в поручении:\n1 USD = 77,5680 RUB" in formatted
-    assert "75,0000 + 2,4% = 76,8000 RUB" in formatted
-    assert "10 000 USD × 76,8000 = 768 000,00 RUB" in formatted
-    assert "Фиксированное ПП:\n100 USD × 76,8000 = 7 680,00 RUB" in formatted
-    assert "Итого основной платёж:\n775 680,00 RUB" in formatted
-    assert "775 680,00 RUB × 0,1% = 775,68 RUB" in formatted
-    assert "Итоговая сумма:\n776 455,68 RUB" in formatted
-    assert "Курс USD для доп. платежа" not in formatted
+    assert "Курс для расчёта ПП:\n75,0000 + 2,4% = 76,8000 RUB" in formatted
+    assert "Кросс-курс с учётом 100 USD:" in formatted
+    assert "10 000 USD × 75,0000 = 750 000,00 RUB" in formatted
+    assert "100 USD × 76,8000 = 7 680,00 RUB" in formatted
+    assert "(750 000,00 RUB + 7 680,00 RUB) / 10 000 USD = 75,7680 RUB" in formatted
+    assert "Расчётный курс:\n75,7680 + 2,4% = 77,5864 RUB" in formatted
+    assert "10 000 USD × 77,5864 = 775 864,32 RUB" in formatted
+    assert "Итого основной платёж:\n775 864,32 RUB" in formatted
+    assert "775 864,32 RUB × 0,1% = 775,86 RUB" in formatted
+    assert "Итоговая сумма:\n776 640,18 RUB" in formatted
     assert "Платёжка" not in formatted
 
 
@@ -556,15 +638,17 @@ def test_format_agent_calculation_text_cny_with_extra_payment() -> None:
     formatted = format_agent_calculation_result(result)
 
     assert "Агентский расчёт на 15.05.2026" in formatted
-    assert "2,5% + 200 USD = 2,4% + 0,1% + 200 USD" in formatted
-    assert "Курс в поручении:\n1 CNY = 11,5188 RUB" in formatted
-    assert "10,9500 + 2,4% = 11,2128 RUB" in formatted
-    assert "Курс USD для доп. платежа:\n75,0000 + 2,4% = 76,8000 RUB" in formatted
-    assert "50 200 CNY × 11,2128 = 562 882,56 RUB" in formatted
-    assert "Фиксированное ПП:\n200 USD × 76,8000 = 15 360,00 RUB" in formatted
-    assert "Итого основной платёж:\n578 242,56 RUB" in formatted
-    assert "578 242,56 RUB × 0,1% = 578,24 RUB" in formatted
-    assert "Итоговая сумма:\n578 820,80 RUB" in formatted
+    assert "2,5% + 200 CNY = 2,4% + 0,1% + 200 CNY" in formatted
+    assert "Курс для расчёта ПП:\n10,9500 + 2,4% = 11,2128 RUB" in formatted
+    assert "Кросс-курс с учётом 200 CNY:" in formatted
+    assert "50 200 CNY × 10,9500 = 549 690,00 RUB" in formatted
+    assert "200 CNY × 11,2128 = 2 242,56 RUB" in formatted
+    assert "(549 690,00 RUB + 2 242,56 RUB) / 50 200 CNY = 10,9947 RUB" in formatted
+    assert "Расчётный курс:\n10,9947 + 2,4% = 11,2585 RUB" in formatted
+    assert "50 200 CNY × 11,2585 = 565 178,94 RUB" in formatted
+    assert "Итого основной платёж:\n565 178,94 RUB" in formatted
+    assert "565 178,94 RUB × 0,1% = 565,18 RUB" in formatted
+    assert "Итоговая сумма:\n565 744,12 RUB" in formatted
     assert "Платёжка" not in formatted
     assert "Корректировка" not in formatted
     assert "Источник" not in formatted
