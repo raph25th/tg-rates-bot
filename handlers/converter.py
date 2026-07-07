@@ -21,6 +21,7 @@ from services.converter import (
     convert_agent_calculation,
     convert_currency as calculate_conversion,
     format_agent_calculation_result,
+    format_agent_assignment_rate,
     format_client_calculation_text,
     is_supported_request,
     looks_like_convert_attempt,
@@ -227,6 +228,9 @@ def format_agent_assignment_text(result: AgentCalculationResult) -> str:
     return "\n".join(
         [
             "Версия для поручения:",
+            "",
+            "Курс в поручении:",
+            format_agent_assignment_rate(result),
             "",
             "Основной платёж:",
             _format_rub_number(result.main_payment_rub),

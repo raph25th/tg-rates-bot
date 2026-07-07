@@ -488,6 +488,9 @@ def test_format_agent_calculation_text_usd_without_extra_payment() -> None:
         "Ставка клиенту:\n"
         "2,5% = 2,4% + 0,1%\n"
         "\n"
+        "Курс в поручении:\n"
+        "1 USD = 76,8000 RUB\n"
+        "\n"
         "Расчётный курс:\n"
         "75,0000 + 2,4% = 76,8000 RUB\n"
         "\n"
@@ -527,6 +530,7 @@ def test_format_agent_calculation_text_usd_with_extra_payment() -> None:
     formatted = format_agent_calculation_result(result)
 
     assert "2,5% + 100 USD = 2,4% + 0,1% + 100 USD" in formatted
+    assert "Курс в поручении:\n1 USD = 77,5680 RUB" in formatted
     assert "75,0000 + 2,4% = 76,8000 RUB" in formatted
     assert "10 000 USD × 76,8000 = 768 000,00 RUB" in formatted
     assert "100 USD × 76,8000 = 7 680,00 RUB" in formatted
@@ -556,6 +560,7 @@ def test_format_agent_calculation_text_cny_with_extra_payment() -> None:
 
     assert "Агентский расчёт:\n15.05.2026" in formatted
     assert "2,5% + 200 USD = 2,4% + 0,1% + 200 USD" in formatted
+    assert "Курс в поручении:\n1 CNY = 11,5188 RUB" in formatted
     assert "10,9500 + 2,4% = 11,2128 RUB" in formatted
     assert "Курс USD для доп. платежа:\n75,0000 + 2,4% = 76,8000 RUB" in formatted
     assert "50 200 CNY × 11,2128 = 562 882,56 RUB" in formatted

@@ -257,6 +257,14 @@ def format_plain_percent(percent: Decimal) -> str:
     return f"{text}%"
 
 
+def get_agent_assignment_rate(result: AgentCalculationResult) -> Decimal:
+    return result.main_payment_rub / result.request.amount
+
+
+def format_agent_assignment_rate(result: AgentCalculationResult) -> str:
+    return f"1 {result.rate.code} = {format_rate(get_agent_assignment_rate(result))} RUB"
+
+
 def format_rub(value: Decimal) -> str:
     return f"{format_number(value, places=2, trim_zero_fraction=False)} RUB"
 
@@ -366,6 +374,9 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
 
     lines.extend(
         [
+            "",
+            "Курс в поручении:",
+            format_agent_assignment_rate(result),
             "",
             "Расчётный курс:",
             f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
