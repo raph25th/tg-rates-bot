@@ -34,6 +34,7 @@ from services.rates.investing import get_investing_unavailable_message
 def test_main_menu_contains_agent_buttons() -> None:
     keyboard = main_menu_keyboard()
     texts = [button.text for row in keyboard.keyboard for button in row]
+    rows = [[button.text for button in row] for row in keyboard.keyboard]
 
     assert texts == [
         CBR_RATES_BUTTON,
@@ -48,6 +49,7 @@ def test_main_menu_contains_agent_buttons() -> None:
         CBR_NOTIFICATIONS_BUTTON,
         CAPABILITIES_BUTTON,
     ]
+    assert rows[3] == [CUSTOM_CALC_BUTTON, AGENT_CUSTOM_CALC_BUTTON]
     assert INVESTING_RATES_BUTTON == "📈 Рыночный курс"
     assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
     assert AGENT_CBR_CALC_BUTTON == "🤝 Агентский расчёт по ЦБ РФ"
