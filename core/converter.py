@@ -226,7 +226,7 @@ def convert_agent_calculation(
         adjusted_extra_payment_rate = None
     else:
         invoice_base_rub = request.amount * rate.unit_rate
-        adjusted_extra_payment_rate = adjusted_rate
+        adjusted_extra_payment_rate = rate.unit_rate
         extra_payment_rub = extra_payment_usd * adjusted_extra_payment_rate
         cross_rate = (invoice_base_rub + extra_payment_rub) / request.amount
         calculation_rate = apply_percent(cross_rate, main_rate_percent)
@@ -406,7 +406,7 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
         lines.extend(
             [
                 "Курс для расчёта ПП:",
-                f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_extra_payment_unit_rate)} RUB",
+                f"1 {rate.code} = {format_rate(result.adjusted_extra_payment_unit_rate)} RUB",
                 "",
                 f"Кросс-курс с учётом {fixed_pp_text}:",
                 f"{format_input_amount(request)} × {format_rate(rate.unit_rate)} = {format_rub(result.invoice_base_rub)}",

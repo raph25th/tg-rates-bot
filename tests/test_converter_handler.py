@@ -358,13 +358,13 @@ async def test_agent_market_mode_calculates_cny_with_pp_without_agent_word() -> 
         assert text.startswith("Агентский расчёт на 05.05.2026")
         assert "Сумма инвойса:\n50 200 CNY" in text
         assert "2,5% + 200 CNY = 2,4% + 0,1% + 200 CNY" in text
-        assert "Курс для расчёта ПП:\n10,9672 + 2,4% = 11,2304 RUB" in text
+        assert "Курс для расчёта ПП:\n1 CNY = 10,9672 RUB" in text
         assert "Кросс-курс с учётом 200 CNY:" in text
         assert "50 200 CNY × 10,9672 = 550 553,44 RUB" in text
-        assert "200 CNY × 11,2304 = 2 246,08 RUB" in text
-        assert "(550 553,44 RUB + 2 246,08 RUB) / 50 200 CNY = 11,0119 RUB" in text
-        assert "Расчётный курс:\n11,0119 + 2,4% = 11,2762 RUB" in text
-        assert "50 200 CNY × 11,2762 = 566 065,24 RUB" in text
+        assert "200 CNY × 10,9672 = 2 193,44 RUB" in text
+        assert "(550 553,44 RUB + 2 193,44 RUB) / 50 200 CNY = 11,0109 RUB" in text
+        assert "Расчётный курс:\n11,0109 + 2,4% = 11,2752 RUB" in text
+        assert "50 200 CNY × 11,2752 = 566 015,04 RUB" in text
         assert "Платёжка" not in text
         assert "Корректировка" not in text
         assert keyboard is not None
@@ -394,19 +394,19 @@ def test_format_agent_assignment_text_uses_amounts_and_words() -> None:
         "Версия для поручения:\n"
         "\n"
         "Курс в поручении:\n"
-        "1 USD = 77,5864 RUB\n"
+        "1 USD = 77,5680 RUB\n"
         "\n"
         "Основной платёж:\n"
-        "775 864,00 RUB\n"
-        "Семьсот семьдесят пять тысяч восемьсот шестьдесят четыре рубля 00 копеек\n"
+        "775 680,00 RUB\n"
+        "Семьсот семьдесят пять тысяч шестьсот восемьдесят рублей 00 копеек\n"
         "\n"
         "Агентское вознаграждение:\n"
-        "775,86 RUB\n"
-        "Семьсот семьдесят пять рублей 86 копеек\n"
+        "775,68 RUB\n"
+        "Семьсот семьдесят пять рублей 68 копеек\n"
         "\n"
         "Итоговая сумма:\n"
-        "776 639,86 RUB\n"
-        "Семьсот семьдесят шесть тысяч шестьсот тридцать девять рублей 86 копеек"
+        "776 455,68 RUB\n"
+        "Семьсот семьдесят шесть тысяч четыреста пятьдесят пять рублей 68 копеек"
     )
     assert "Доп. платёж" not in text
     assert "ПП" not in text
