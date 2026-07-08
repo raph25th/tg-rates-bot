@@ -359,6 +359,25 @@ def format_client_calculation_text(result: ConversionResult) -> str:
     return "\n".join(lines)
 
 
+def format_custom_calculation_result(result: ConversionResult) -> str:
+    request = result.request
+    rate = result.rate
+    return "\n".join(
+        [
+            f"Расчёт по своему курсу на {rate.date.strftime('%d.%m.%Y')}",
+            "",
+            "Собственный курс:",
+            f"1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
+            "",
+            "Сумма инвойса:",
+            format_input_amount(request),
+            "",
+            "Сумма по курсу:",
+            f"{format_input_amount(request)} × {format_rate(result.adjusted_unit_rate)} = {format_rub(result.result)}",
+        ]
+    )
+
+
 def format_agent_calculation_result(result: AgentCalculationResult) -> str:
     request = result.request
     rate = result.rate
@@ -449,6 +468,14 @@ def format_agent_calculation_result(result: AgentCalculationResult) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def format_custom_agent_calculation_result(result: AgentCalculationResult) -> str:
+    text = format_agent_calculation_result(result)
+    return (
+        text.replace("Агентский расчёт на ", "Агентский расчёт по своему курсу на ", 1)
+        .replace("Актуальный курс:", "Собственный курс:", 1)
+    )
 
 
 def format_conversion(amount: Decimal, code: str, result_rub: Decimal) -> str:

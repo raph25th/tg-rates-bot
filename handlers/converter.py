@@ -1,5 +1,9 @@
 import logging
+import re
 from dataclasses import replace
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -8,9 +12,11 @@ from config import Settings
 from core.models import CurrencyRate, RatesSnapshot
 from handlers.start import (
     AGENT_CBR_CALC_BUTTON,
+    AGENT_CUSTOM_CALC_BUTTON,
     AGENT_MARKET_CALC_BUTTON,
     CAPABILITIES_BUTTON,
     CBR_CALC_BUTTON,
+    CUSTOM_CALC_BUTTON,
     INVESTING_CALC_BUTTON,
     main_menu_keyboard,
 )
@@ -23,6 +29,8 @@ from services.converter import (
     format_agent_calculation_result,
     format_agent_assignment_rate,
     format_client_calculation_text,
+    format_custom_agent_calculation_result,
+    format_custom_calculation_result,
     is_supported_request,
     looks_like_convert_attempt,
     parse_convert_request,
@@ -39,8 +47,11 @@ MARKET_SOURCE = "MARKET"
 INVESTING_SOURCE = MARKET_SOURCE
 AGENT_CBR_SOURCE = "AGENT_CBR"
 AGENT_MARKET_SOURCE = "AGENT_MARKET"
+CUSTOM_SOURCE = "CUSTOM"
+AGENT_CUSTOM_SOURCE = "AGENT_CUSTOM"
 user_rate_source: dict[int, str] = {}
 last_agent_calculations: dict[int, AgentCalculationResult] = {}
+_CUSTOM_RATE_RE = re.compile(r"^\s*(?P<rate>\d+(?:[.,]\d+)?)\s+(?P<request>.+?)\s*$")
 
 UNKNOWN_CURRENCY_TEXT = (
     "Неизвестная валюта. Сейчас доступны: "
@@ -73,6 +84,54 @@ AGENT_HINT_TEXT = (
     "10 000 USD +2,5%\n"
     "10 000 USD +2,5% +100ПП\n"
     "50 200 CNY +2,5% +200ПП"
+)
+CUSTOM_CALC_HINT_TEXT = (
+    "🧮 Расчёт по своему курсу\n"
+    "\n"
+    "Введите курс, сумму и валюту.\n"
+    "\n"
+    "Формат:\n"
+    "76,50 10 000 USD\n"
+    "\n"
+    "Примеры:\n"
+    "76,50 10 000 USD\n"
+    "76.50 10 000 USD\n"
+    "12,80 50 200 CNY\n"
+    "21,30 100 000 AED"
+)
+CUSTOM_CALC_PARSE_ERROR_TEXT = (
+    "Не удалось разобрать расчёт.\n"
+    "\n"
+    "Используйте формат:\n"
+    "76,50 10 000 USD\n"
+    "\n"
+    "Где:\n"
+    "76,50 — собственный курс\n"
+    "10 000 USD — сумма инвойса"
+)
+AGENT_CUSTOM_CALC_HINT_TEXT = (
+    "🤝 Агентский расчёт по своему курсу\n"
+    "\n"
+    "Введите курс, сумму, валюту и ставку.\n"
+    "\n"
+    "Формат:\n"
+    "76,50 10 000 USD +2,5% +100ПП\n"
+    "\n"
+    "Примеры:\n"
+    "76,50 10 000 USD +2,5%\n"
+    "76.50 10 000 USD +2,5% +100ПП"
+)
+AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT = (
+    "Не удалось разобрать агентский расчёт.\n"
+    "\n"
+    "Используйте формат:\n"
+    "76,50 10 000 USD +2,5% +100ПП\n"
+    "\n"
+    "Где:\n"
+    "76,50 — собственный курс\n"
+    "10 000 USD — сумма инвойса\n"
+    "+2,5% — ставка клиенту\n"
+    "+100ПП — доп. платёж, если нужен"
 )
 
 
@@ -266,11 +325,46 @@ def _get_user_source(message: Message) -> str:
 
 
 def _is_agent_source(source: str) -> bool:
-    return source in {AGENT_CBR_SOURCE, AGENT_MARKET_SOURCE}
+    return source in {AGENT_CBR_SOURCE, AGENT_MARKET_SOURCE, AGENT_CUSTOM_SOURCE}
 
 
 def _agent_uses_market(source: str) -> bool:
     return source == AGENT_MARKET_SOURCE or source == MARKET_SOURCE
+
+
+def _parse_custom_rate_request(text: str):
+    match = _CUSTOM_RATE_RE.match(text)
+    if match is None:
+        return None
+
+    try:
+        custom_rate = Decimal(match.group("rate").replace(",", "."))
+    except InvalidOperation:
+        return None
+    if custom_rate <= 0:
+        return None
+
+    request = parse_convert_request(match.group("request"))
+    if request is None:
+        return None
+    return custom_rate, request
+
+
+def _custom_rate_date(app_config: Settings):
+    return datetime.now(ZoneInfo(app_config.timezone)).date()
+
+
+def _custom_rate_snapshot(custom_rate: Decimal, code: str, app_config: Settings) -> RatesSnapshot:
+    rate_date = _custom_rate_date(app_config)
+    rate = CurrencyRate(
+        code=code,
+        name="Собственный курс",
+        nominal=1,
+        value=custom_rate,
+        unit_rate=custom_rate,
+        date=rate_date,
+    )
+    return RatesSnapshot(date=rate_date, rates={code: rate})
 
 
 def _make_agent_request(request):
@@ -299,6 +393,12 @@ async def choose_cbr_calculation(message: Message) -> None:
         "10 000 eur +2%\n"
         "1 000 000 rub в usd"
     )
+
+
+@router.message(F.text == CUSTOM_CALC_BUTTON)
+async def choose_custom_calculation(message: Message) -> None:
+    _set_user_source(message, CUSTOM_SOURCE)
+    await message.answer(CUSTOM_CALC_HINT_TEXT)
 
 
 @router.callback_query(F.data == "calc:cbr")
@@ -358,6 +458,12 @@ async def choose_agent_market_calculation(message: Message, market_rate_provider
     )
 
 
+@router.message(F.text == AGENT_CUSTOM_CALC_BUTTON)
+async def choose_agent_custom_calculation(message: Message) -> None:
+    _set_user_source(message, AGENT_CUSTOM_SOURCE)
+    await message.answer(AGENT_CUSTOM_CALC_HINT_TEXT)
+
+
 @router.callback_query(F.data == "calc:new")
 async def new_calculation(callback: CallbackQuery) -> None:
     await callback.answer()
@@ -389,6 +495,63 @@ async def convert_currency(
     if message.text is None:
         return
 
+    active_source = _get_user_source(message)
+    if active_source in {CUSTOM_SOURCE, AGENT_CUSTOM_SOURCE}:
+        parsed_custom = _parse_custom_rate_request(message.text)
+        if parsed_custom is None:
+            await message.answer(
+                AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT
+                if active_source == AGENT_CUSTOM_SOURCE
+                else CUSTOM_CALC_PARSE_ERROR_TEXT
+            )
+            return
+
+        custom_rate, request = parsed_custom
+        if not is_supported_request(request) or request.is_reverse:
+            await message.answer(
+                AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT
+                if active_source == AGENT_CUSTOM_SOURCE
+                else CUSTOM_CALC_PARSE_ERROR_TEXT
+            )
+            return
+
+        snapshot = _custom_rate_snapshot(custom_rate, request.from_code, app_config)
+        if active_source == CUSTOM_SOURCE:
+            if request.percent is not None or request.extra_payment_amount is not None or request.is_agent_calculation:
+                await message.answer(CUSTOM_CALC_PARSE_ERROR_TEXT)
+                return
+
+            result = calculate_conversion(request, snapshot, source=CUSTOM_SOURCE)
+            if result is None:
+                await message.answer(CUSTOM_CALC_PARSE_ERROR_TEXT)
+                return
+
+            await message.answer(
+                format_custom_calculation_result(result),
+                reply_markup=calculator_result_keyboard(),
+            )
+            return
+
+        request = _make_agent_request(request)
+        if request.percent is None:
+            await message.answer(AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT)
+            return
+        if request.percent <= request.agent_fee_percent:
+            await message.answer(AGENT_RATE_TOO_LOW_TEXT)
+            return
+
+        result = convert_agent_calculation(request, snapshot, source=AGENT_CUSTOM_SOURCE)
+        if result is None:
+            await message.answer(AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT)
+            return
+
+        _save_last_agent_calculation(message, result)
+        await message.answer(
+            format_custom_agent_calculation_result(result),
+            reply_markup=agent_calculation_keyboard(),
+        )
+        return
+
     request = parse_convert_request(message.text)
     if request is None:
         if looks_like_convert_attempt(message.text):
@@ -399,7 +562,6 @@ async def convert_currency(
         await message.answer(UNKNOWN_CURRENCY_TEXT)
         return
 
-    active_source = _get_user_source(message)
     is_agent_calculation = request.is_agent_calculation or _is_agent_source(active_source)
     if is_agent_calculation:
         request = _make_agent_request(request)

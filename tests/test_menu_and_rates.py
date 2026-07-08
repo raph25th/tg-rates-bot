@@ -7,11 +7,13 @@ from config import Settings
 from core.models import CurrencyRate, RatesSnapshot
 from handlers.start import (
     AGENT_CBR_CALC_BUTTON,
+    AGENT_CUSTOM_CALC_BUTTON,
     AGENT_MARKET_CALC_BUTTON,
     CAPABILITIES_BUTTON,
     CBR_CALC_BUTTON,
     CBR_NOTIFICATIONS_BUTTON,
     CBR_RATES_BUTTON,
+    CUSTOM_CALC_BUTTON,
     INVESTING_CALC_BUTTON,
     INVESTING_RATES_BUTTON,
     SPREAD_BUTTON,
@@ -40,6 +42,8 @@ def test_main_menu_contains_agent_buttons() -> None:
         INVESTING_CALC_BUTTON,
         AGENT_CBR_CALC_BUTTON,
         AGENT_MARKET_CALC_BUTTON,
+        CUSTOM_CALC_BUTTON,
+        AGENT_CUSTOM_CALC_BUTTON,
         SPREAD_BUTTON,
         CBR_NOTIFICATIONS_BUTTON,
         CAPABILITIES_BUTTON,
@@ -48,6 +52,8 @@ def test_main_menu_contains_agent_buttons() -> None:
     assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
     assert AGENT_CBR_CALC_BUTTON == "🤝 Агентский расчёт по ЦБ РФ"
     assert AGENT_MARKET_CALC_BUTTON == "🤝 Агентский расчёт по рынку"
+    assert CUSTOM_CALC_BUTTON == "🧮 Расчёт по своему курсу"
+    assert AGENT_CUSTOM_CALC_BUTTON == "🤝 Агентский расчёт по своему курсу"
     assert SPREAD_BUTTON == "📉 Спред"
     assert CBR_NOTIFICATIONS_BUTTON == "🔔 Уведомления ЦБ"
     assert all("Investing" not in text for text in texts)

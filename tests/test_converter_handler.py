@@ -9,15 +9,19 @@ from core.models import CurrencyRate, RatesSnapshot
 from handlers.converter import convert_currency as convert_currency_handler
 from handlers.converter import (
     AGENT_CBR_SOURCE,
+    AGENT_CUSTOM_SOURCE,
     AGENT_MARKET_SOURCE,
     AGENT_RATE_TOO_LOW_TEXT,
     AGENT_REVERSE_UNSUPPORTED_TEXT,
+    CUSTOM_SOURCE,
     INVESTING_CALC_UNAVAILABLE_TEXT,
     MARKET_SOURCE,
     agent_calculation_keyboard,
     calculator_result_keyboard,
+    choose_agent_custom_calculation,
     choose_agent_cbr_calculation,
     choose_agent_market_calculation,
+    choose_custom_calculation,
     format_agent_assignment_text,
     get_capabilities_hint,
     get_agent_assignment_text_for_user,
@@ -304,6 +308,32 @@ async def test_agent_market_button_sets_mode_and_shows_hint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_custom_button_sets_mode_and_shows_hint() -> None:
+    user_rate_source.pop(1001, None)
+    message = FakeMessage()
+
+    await choose_custom_calculation(message)
+
+    assert user_rate_source[1001] == CUSTOM_SOURCE
+    assert message.answers[0][0].startswith("🧮 Расчёт по своему курсу")
+    assert "76,50 10 000 USD" in message.answers[0][0]
+    user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
+async def test_agent_custom_button_sets_mode_and_shows_hint() -> None:
+    user_rate_source.pop(1001, None)
+    message = FakeMessage()
+
+    await choose_agent_custom_calculation(message)
+
+    assert user_rate_source[1001] == AGENT_CUSTOM_SOURCE
+    assert message.answers[0][0].startswith("🤝 Агентский расчёт по своему курсу")
+    assert "76.50 10 000 USD +2,5% +100ПП" in message.answers[0][0]
+    user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
 async def test_agent_cbr_mode_calculates_without_agent_word() -> None:
     user_rate_source[1001] = AGENT_CBR_SOURCE
     last_agent_calculations.pop(1001, None)
@@ -376,6 +406,118 @@ async def test_agent_market_mode_calculates_cny_with_pp_without_agent_word() -> 
         assert saved_result.extra_payment_rub is not None
         assert saved_result.main_payment_rub == saved_result.main_currency_payment_rub
         assert saved_result.cross_rate is not None
+    finally:
+        user_rate_source.pop(1001, None)
+        last_agent_calculations.pop(1001, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom_input", ["76,50 10 000 USD", "76.50 10 000 USD"])
+async def test_custom_rate_mode_calculates_simple_invoice(custom_input: str) -> None:
+    user_rate_source[1001] = CUSTOM_SOURCE
+    message = FakeMessage(custom_input)
+    cbr_service = FakeCbrService()
+    market_provider = FakeMarketProvider()
+
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=cbr_service,
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=market_provider,
+        )
+
+        text, keyboard = message.answers[0]
+        assert cbr_service.fetch_latest_calls == 0
+        assert market_provider.requests == []
+        assert text.startswith("Расчёт по своему курсу на 08.07.2026")
+        assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
+        assert "Сумма инвойса:\n10 000 USD" in text
+        assert "10 000 USD × 76,5000 = 765 000,00 RUB" in text
+        assert keyboard is not None
+    finally:
+        user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom_input", ["76,50 10 000 USD +2,5%", "76.50 10 000 USD +2,5%"])
+async def test_agent_custom_rate_mode_calculates_without_pp(custom_input: str) -> None:
+    user_rate_source[1001] = AGENT_CUSTOM_SOURCE
+    last_agent_calculations.pop(1001, None)
+    message = FakeMessage(custom_input)
+    cbr_service = FakeCbrService()
+    market_provider = FakeMarketProvider()
+
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=cbr_service,
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=market_provider,
+        )
+
+        text, keyboard = message.answers[0]
+        assert cbr_service.fetch_latest_calls == 0
+        assert market_provider.requests == []
+        assert text.startswith("Агентский расчёт по своему курсу на 08.07.2026")
+        assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
+        assert "2,5% = 2,4% + 0,1%" in text
+        assert "Расчётный курс:\n76,5000 + 2,4% = 78,3360 RUB" in text
+        assert "10 000 USD × 78,3360 = 783 360,00 RUB" in text
+        assert "783 360,00 RUB × 0,1% = 783,36 RUB" in text
+        assert "Итоговая сумма:\n784 143,36 RUB" in text
+        assert "Курс для расчёта ПП" not in text
+        assert "Кросс-курс" not in text
+        assert keyboard is not None
+        assert last_agent_calculations[1001].adjusted_unit_rate == Decimal("78.3360")
+        assert last_agent_calculations[1001].main_payment_rub == Decimal("783360.0000")
+    finally:
+        user_rate_source.pop(1001, None)
+        last_agent_calculations.pop(1001, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "custom_input",
+    ["76,50 10 000 USD +2,5% +100ПП", "76.50 10 000 USD +2,5% +100ПП"],
+)
+async def test_agent_custom_rate_mode_calculates_pp_without_double_commission(custom_input: str) -> None:
+    user_rate_source[1001] = AGENT_CUSTOM_SOURCE
+    last_agent_calculations.pop(1001, None)
+    message = FakeMessage(custom_input)
+    cbr_service = FakeCbrService()
+    market_provider = FakeMarketProvider()
+
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=cbr_service,
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=market_provider,
+        )
+
+        text, keyboard = message.answers[0]
+        assert cbr_service.fetch_latest_calls == 0
+        assert market_provider.requests == []
+        assert text.startswith("Агентский расчёт по своему курсу на 08.07.2026")
+        assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
+        assert "2,5% + 100 USD = 2,4% + 0,1% + 100 USD" in text
+        assert "Курс для расчёта ПП:\n1 USD = 76,5000 RUB" in text
+        assert "10 000 USD × 76,5000 = 765 000,00 RUB" in text
+        assert "100 USD × 76,5000 = 7 650,00 RUB" in text
+        assert "100 USD × 78,3360" not in text
+        assert "(765 000,00 RUB + 7 650,00 RUB) / 10 000 USD = 77,2650 RUB" in text
+        assert "Расчётный курс:\n77,2650 + 2,4% = 79,1194 RUB" in text
+        assert "10 000 USD × 79,1194 = 791 194,00 RUB" in text
+        assert "791 194,00 RUB × 0,1% = 791,19 RUB" in text
+        assert "Итоговая сумма:\n791 985,19 RUB" in text
+        assert keyboard is not None
+        saved_result = last_agent_calculations[1001]
+        assert saved_result.adjusted_extra_payment_unit_rate == Decimal("76.50")
+        assert saved_result.adjusted_unit_rate == Decimal("79.1194")
+        assert saved_result.main_payment_rub == Decimal("791194.0000")
+        assert saved_result.agent_fee_rub == Decimal("791.19400")
+        assert saved_result.final_result == Decimal("791985.19400")
     finally:
         user_rate_source.pop(1001, None)
         last_agent_calculations.pop(1001, None)
