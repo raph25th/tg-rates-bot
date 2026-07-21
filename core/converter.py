@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_plain_amount, format_rate
@@ -82,6 +82,36 @@ class AgentCalculationResult:
     main_payment_rub: Decimal
     agent_fee_rub: Decimal
     final_result: Decimal
+    source: str = DEFAULT_CBR_SOURCE
+
+
+@dataclass(frozen=True)
+class MaxInvoiceRequest:
+    limit_rub: Decimal
+    invoice_code: str
+    percent: Decimal
+    extra_payment_amount: Decimal | None = None
+    extra_payment_code: str | None = None
+    agent_fee_percent: Decimal = AGENT_FEE_PERCENT
+
+
+@dataclass(frozen=True)
+class MaxInvoiceResult:
+    request: MaxInvoiceRequest
+    rate: CurrencyRate
+    adjusted_unit_rate: Decimal
+    client_percent: Decimal
+    main_rate_percent: Decimal
+    agent_fee_percent: Decimal
+    max_invoice_amount: Decimal
+    main_payment_rub: Decimal
+    agent_fee_rub: Decimal
+    final_result: Decimal
+    remainder_rub: Decimal
+    invoice_base_rub: Decimal | None = None
+    extra_payment_rate: CurrencyRate | None = None
+    extra_payment_rub: Decimal | None = None
+    cross_rate: Decimal | None = None
     source: str = DEFAULT_CBR_SOURCE
 
 
@@ -258,6 +288,113 @@ def convert_agent_calculation(
     )
 
 
+def _agent_total_from_main_payment(main_payment_rub: Decimal, agent_fee_percent: Decimal) -> tuple[Decimal, Decimal]:
+    agent_fee_rub = main_payment_rub * agent_fee_percent / Decimal("100")
+    return agent_fee_rub, main_payment_rub + agent_fee_rub
+
+
+def _max_invoice_main_payment(
+    amount: Decimal,
+    invoice_rate: CurrencyRate,
+    pp_rate: CurrencyRate | None,
+    extra_payment_amount: Decimal | None,
+    main_rate_percent: Decimal,
+) -> tuple[Decimal, Decimal | None, Decimal | None, Decimal]:
+    if extra_payment_amount is None or pp_rate is None:
+        adjusted_rate = round_rate_for_calculation(apply_percent(invoice_rate.unit_rate, main_rate_percent))
+        return amount * adjusted_rate, None, None, adjusted_rate
+
+    invoice_base_rub = amount * invoice_rate.unit_rate
+    extra_payment_rub = extra_payment_amount * pp_rate.unit_rate
+    cross_rate = (invoice_base_rub + extra_payment_rub) / amount
+    adjusted_rate = round_rate_for_calculation(apply_percent(cross_rate, main_rate_percent))
+    return amount * adjusted_rate, invoice_base_rub, cross_rate, adjusted_rate
+
+
+def calculate_max_invoice(
+    request: MaxInvoiceRequest,
+    snapshot: RatesSnapshot,
+    source: str = DEFAULT_CBR_SOURCE,
+) -> MaxInvoiceResult | None:
+    if request.limit_rub <= 0 or request.percent <= request.agent_fee_percent:
+        return None
+
+    invoice_rate = snapshot.rates.get(request.invoice_code)
+    if invoice_rate is None:
+        return None
+
+    extra_payment_amount = request.extra_payment_amount
+    extra_payment_code = request.extra_payment_code or request.invoice_code
+    extra_payment_rate = None
+    extra_payment_rub = None
+    if extra_payment_amount is not None:
+        extra_payment_rate = snapshot.rates.get(extra_payment_code)
+        if extra_payment_rate is None:
+            return None
+        extra_payment_rub = extra_payment_amount * extra_payment_rate.unit_rate
+
+    main_rate_percent = request.percent - request.agent_fee_percent
+    no_pp_rate = round_rate_for_calculation(apply_percent(invoice_rate.unit_rate, main_rate_percent))
+    if no_pp_rate <= 0:
+        return None
+    no_pp_unit_total = no_pp_rate * (Decimal("1") + request.agent_fee_percent / Decimal("100"))
+    high_cents = int((request.limit_rub / no_pp_unit_total * Decimal("100")).to_integral_value(rounding=ROUND_FLOOR))
+    if high_cents <= 0:
+        return None
+
+    best_cents = 0
+    low_cents = 1
+    while low_cents <= high_cents:
+        mid_cents = (low_cents + high_cents) // 2
+        amount = Decimal(mid_cents) / Decimal("100")
+        main_payment_rub, _, _, _ = _max_invoice_main_payment(
+            amount,
+            invoice_rate,
+            extra_payment_rate,
+            extra_payment_amount,
+            main_rate_percent,
+        )
+        _, final_result = _agent_total_from_main_payment(main_payment_rub, request.agent_fee_percent)
+        if final_result <= request.limit_rub:
+            best_cents = mid_cents
+            low_cents = mid_cents + 1
+        else:
+            high_cents = mid_cents - 1
+
+    if best_cents <= 0:
+        return None
+
+    max_invoice_amount = Decimal(best_cents) / Decimal("100")
+    main_payment_rub, invoice_base_rub, cross_rate, adjusted_rate = _max_invoice_main_payment(
+        max_invoice_amount,
+        invoice_rate,
+        extra_payment_rate,
+        extra_payment_amount,
+        main_rate_percent,
+    )
+    agent_fee_rub, final_result = _agent_total_from_main_payment(main_payment_rub, request.agent_fee_percent)
+    remainder_rub = request.limit_rub - final_result
+
+    return MaxInvoiceResult(
+        request=request,
+        rate=invoice_rate,
+        adjusted_unit_rate=adjusted_rate,
+        client_percent=request.percent,
+        main_rate_percent=main_rate_percent,
+        agent_fee_percent=request.agent_fee_percent,
+        max_invoice_amount=max_invoice_amount,
+        main_payment_rub=main_payment_rub,
+        agent_fee_rub=agent_fee_rub,
+        final_result=final_result,
+        remainder_rub=remainder_rub,
+        invoice_base_rub=invoice_base_rub,
+        extra_payment_rate=extra_payment_rate,
+        extra_payment_rub=extra_payment_rub,
+        cross_rate=cross_rate,
+        source=source,
+    )
+
+
 def format_percent(percent: Decimal) -> str:
     sign = "+" if percent >= 0 else ""
     text = format(percent.normalize(), "f").replace(".", ",")
@@ -275,6 +412,99 @@ def get_agent_assignment_rate(result: AgentCalculationResult) -> Decimal:
 
 def format_agent_assignment_rate(result: AgentCalculationResult) -> str:
     return f"1 {result.rate.code} = {format_rate(get_agent_assignment_rate(result))} RUB"
+
+
+def format_max_invoice_result(result: MaxInvoiceResult) -> str:
+    request = result.request
+    rate = result.rate
+    client_percent = format_plain_percent(result.client_percent)
+    main_percent = format_plain_percent(result.main_rate_percent)
+    agent_percent = format_plain_percent(result.agent_fee_percent)
+    invoice_amount_text = f"{format_number(result.max_invoice_amount, places=2, trim_zero_fraction=False)} {request.invoice_code}"
+
+    lines = [
+        f"Максимальная сумма инвойса на {rate.date.strftime('%d.%m.%Y')}",
+        "",
+        "Лимит клиента:",
+        format_rub(request.limit_rub),
+        "",
+        "Актуальные курсы:",
+        f"1 {rate.code} = {format_rate(rate.unit_rate)} RUB",
+    ]
+
+    extra_rate = result.extra_payment_rate
+    if extra_rate is not None and extra_rate.code != rate.code:
+        lines.append(f"1 {extra_rate.code} = {format_rate(extra_rate.unit_rate)} RUB")
+
+    lines.extend(
+        [
+            "",
+            "Ставка клиенту:",
+        ]
+    )
+
+    if request.extra_payment_amount is None:
+        lines.append(f"{client_percent} = {main_percent} + {agent_percent}")
+    else:
+        extra_code = extra_rate.code if extra_rate is not None else (request.extra_payment_code or request.invoice_code)
+        extra_text = f"{format_plain_amount(request.extra_payment_amount)} {extra_code}"
+        lines.append(f"{client_percent} + {extra_text} = {main_percent} + {agent_percent} + {extra_text}")
+
+    lines.extend(
+        [
+            "",
+        ]
+    )
+
+    if request.extra_payment_amount is None:
+        lines.extend(
+            [
+                "Расчётный курс:",
+                f"{format_rate(rate.unit_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
+            ]
+        )
+    elif (
+        extra_rate is not None
+        and result.extra_payment_rub is not None
+        and result.invoice_base_rub is not None
+        and result.cross_rate is not None
+    ):
+        extra_text = f"{format_plain_amount(request.extra_payment_amount)} {extra_rate.code}"
+        lines.extend(
+            [
+                "Курс для расчёта ПП:",
+                f"1 {extra_rate.code} = {format_rate(extra_rate.unit_rate)} RUB",
+                "",
+                f"Кросс-курс с учётом {extra_text}:",
+                f"{invoice_amount_text} × {format_rate(rate.unit_rate)} = {format_rub(result.invoice_base_rub)}",
+                f"{extra_text} × {format_rate(extra_rate.unit_rate)} = {format_rub(result.extra_payment_rub)}",
+                f"({format_rub(result.invoice_base_rub)} + {format_rub(result.extra_payment_rub)}) / {invoice_amount_text} = {format_rate(result.cross_rate)} RUB",
+                "",
+                "Расчётный курс:",
+                f"{format_rate(result.cross_rate)} + {main_percent} = {format_rate(result.adjusted_unit_rate)} RUB",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "Максимальная сумма инвойса:",
+            invoice_amount_text,
+            "",
+            "Основной платёж:",
+            f"{invoice_amount_text} × {format_rate(result.adjusted_unit_rate)} = {format_rub(result.main_payment_rub)}",
+            "",
+            "Агентское вознаграждение:",
+            f"{format_rub(result.main_payment_rub)} × {agent_percent} = {format_rub(result.agent_fee_rub)}",
+            "",
+            "Итоговая сумма:",
+            format_rub(result.final_result),
+            "",
+            "Остаток от лимита:",
+            format_rub(result.remainder_rub),
+        ]
+    )
+    return "\n".join(lines)
 
 
 def format_rub(value: Decimal) -> str:

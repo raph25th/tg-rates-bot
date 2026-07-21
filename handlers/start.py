@@ -17,6 +17,7 @@ CUSTOM_CALC_BUTTON = "🧮 Расчёт по своему курсу"
 AGENT_CBR_CALC_BUTTON = "🤝 Агентский расчёт по ЦБ РФ"
 AGENT_MARKET_CALC_BUTTON = "🤝 Агентский расчёт по рынку"
 AGENT_CUSTOM_CALC_BUTTON = "🤝 Агентский расчёт по своему курсу"
+MAX_INVOICE_BUTTON = "💰 Максимальная сумма инвойса"
 SPREAD_BUTTON = "📉 Спред"
 CBR_NOTIFICATIONS_BUTTON = "🔔 Уведомления ЦБ"
 CAPABILITIES_BUTTON = "❓ Что умеет бот"
@@ -29,6 +30,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=CBR_CALC_BUTTON), KeyboardButton(text=INVESTING_CALC_BUTTON)],
             [KeyboardButton(text=AGENT_CBR_CALC_BUTTON), KeyboardButton(text=AGENT_MARKET_CALC_BUTTON)],
             [KeyboardButton(text=CUSTOM_CALC_BUTTON), KeyboardButton(text=AGENT_CUSTOM_CALC_BUTTON)],
+            [KeyboardButton(text=MAX_INVOICE_BUTTON)],
             [KeyboardButton(text=SPREAD_BUTTON), KeyboardButton(text=CBR_NOTIFICATIONS_BUTTON)],
             [KeyboardButton(text=CAPABILITIES_BUTTON)],
         ],

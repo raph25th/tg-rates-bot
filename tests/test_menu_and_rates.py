@@ -16,6 +16,7 @@ from handlers.start import (
     CUSTOM_CALC_BUTTON,
     INVESTING_CALC_BUTTON,
     INVESTING_RATES_BUTTON,
+    MAX_INVOICE_BUTTON,
     SPREAD_BUTTON,
     main_menu_keyboard,
 )
@@ -45,17 +46,20 @@ def test_main_menu_contains_agent_buttons() -> None:
         AGENT_MARKET_CALC_BUTTON,
         CUSTOM_CALC_BUTTON,
         AGENT_CUSTOM_CALC_BUTTON,
+        MAX_INVOICE_BUTTON,
         SPREAD_BUTTON,
         CBR_NOTIFICATIONS_BUTTON,
         CAPABILITIES_BUTTON,
     ]
     assert rows[3] == [CUSTOM_CALC_BUTTON, AGENT_CUSTOM_CALC_BUTTON]
+    assert rows[4] == [MAX_INVOICE_BUTTON]
     assert INVESTING_RATES_BUTTON == "📈 Рыночный курс"
     assert INVESTING_CALC_BUTTON == "💱 Расчёт по рынку"
     assert AGENT_CBR_CALC_BUTTON == "🤝 Агентский расчёт по ЦБ РФ"
     assert AGENT_MARKET_CALC_BUTTON == "🤝 Агентский расчёт по рынку"
     assert CUSTOM_CALC_BUTTON == "🧮 Расчёт по своему курсу"
     assert AGENT_CUSTOM_CALC_BUTTON == "🤝 Агентский расчёт по своему курсу"
+    assert MAX_INVOICE_BUTTON == "💰 Максимальная сумма инвойса"
     assert SPREAD_BUTTON == "📉 Спред"
     assert CBR_NOTIFICATIONS_BUTTON == "🔔 Уведомления ЦБ"
     assert all("Investing" not in text for text in texts)

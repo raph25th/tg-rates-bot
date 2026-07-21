@@ -1,14 +1,17 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from core.models import CurrencyRate, RatesSnapshot
 from core.money import format_number, format_rate
 from services.converter import (
+    MaxInvoiceRequest,
+    calculate_max_invoice,
     convert_agent_calculation,
     convert_currency,
     format_agent_calculation_result,
     format_calculator_result,
     format_client_calculation_text,
+    format_max_invoice_result,
     parse_convert_request,
 )
 
@@ -174,6 +177,88 @@ def test_agent_calculation_cny_with_extra_payment() -> None:
     assert result.main_payment_rub == Decimal("565126.5000")
     assert result.agent_fee_rub == Decimal("565.12650")
     assert result.final_result == Decimal("565691.62650")
+
+
+def test_calculate_max_invoice_without_extra_payment_matches_limit() -> None:
+    rate_date = date(2026, 7, 8)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "AED": CurrencyRate("AED", "Дирхам ОАЭ", 1, Decimal("21.3250"), Decimal("21.3250"), rate_date),
+        },
+    )
+    request = MaxInvoiceRequest(
+        limit_rub=Decimal("5000000"),
+        invoice_code="AED",
+        percent=Decimal("2.7"),
+    )
+
+    result = calculate_max_invoice(request, snapshot)
+
+    assert result is not None
+    assert result.main_rate_percent == Decimal("2.6")
+    assert result.adjusted_unit_rate == Decimal("21.8795")
+    assert result.max_invoice_amount == Decimal("228296.12")
+    assert result.main_payment_rub == Decimal("4995004.957540")
+    assert result.agent_fee_rub == Decimal("4995.004957540")
+    assert result.final_result == Decimal("4999999.962497540")
+    assert result.remainder_rub == Decimal("0.037502460")
+
+    next_invoice_amount = result.max_invoice_amount + Decimal("0.01")
+    next_main_payment = next_invoice_amount * result.adjusted_unit_rate
+    next_total = next_main_payment + next_main_payment * result.agent_fee_percent / Decimal("100")
+    assert next_total > request.limit_rub
+
+    formatted = format_max_invoice_result(result)
+    assert "Максимальная сумма инвойса на 08.07.2026" in formatted
+    assert "Лимит клиента:\n5 000 000,00 RUB" in formatted
+    assert "2,7% = 2,6% + 0,1%" in formatted
+    assert "21,3250 + 2,6% = 21,8795 RUB" in formatted
+    assert "Максимальная сумма инвойса:\n228 296,12 AED" in formatted
+    assert "228 296,12 AED × 21,8795 = 4 995 004,96 RUB" in formatted
+    assert "Итоговая сумма:\n4 999 999,96 RUB" in formatted
+    assert "Остаток от лимита:\n0,04 RUB" in formatted
+
+
+def test_calculate_max_invoice_with_extra_payment_in_other_currency() -> None:
+    rate_date = date(2026, 7, 8)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.0000"), Decimal("88.0000"), rate_date),
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    request = MaxInvoiceRequest(
+        limit_rub=Decimal("500000"),
+        invoice_code="EUR",
+        percent=Decimal("2"),
+        extra_payment_amount=Decimal("215"),
+        extra_payment_code="USD",
+    )
+
+    result = calculate_max_invoice(request, snapshot)
+
+    assert result is not None
+    assert result.extra_payment_rate is not None
+    assert result.extra_payment_rate.code == "USD"
+    assert result.extra_payment_rub == Decimal("16125.0000")
+    assert result.max_invoice_amount == Decimal("5387.06")
+    assert result.cross_rate == Decimal("90.99328390624941990621971910")
+    assert result.adjusted_unit_rate == Decimal("92.7222")
+    assert result.main_payment_rub == Decimal("499500.054732")
+    assert result.agent_fee_rub == Decimal("499.500054732")
+    assert result.final_result == Decimal("499999.554786732")
+    assert result.remainder_rub == Decimal("0.445213268")
+
+    next_invoice_amount = result.max_invoice_amount + Decimal("0.01")
+    next_invoice_base_rub = next_invoice_amount * result.rate.unit_rate
+    next_cross_rate = (next_invoice_base_rub + result.extra_payment_rub) / next_invoice_amount
+    next_adjusted_rate = next_cross_rate * (Decimal("1") + result.main_rate_percent / Decimal("100"))
+    next_adjusted_rate = next_adjusted_rate.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    next_main_payment = next_invoice_amount * next_adjusted_rate
+    next_total = next_main_payment + next_main_payment * result.agent_fee_percent / Decimal("100")
+    assert next_total > request.limit_rub
 
 
 def test_convert_rub_to_currency() -> None:

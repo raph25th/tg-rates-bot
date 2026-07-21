@@ -15,12 +15,14 @@ from handlers.converter import (
     AGENT_REVERSE_UNSUPPORTED_TEXT,
     CUSTOM_SOURCE,
     INVESTING_CALC_UNAVAILABLE_TEXT,
+    MAX_INVOICE_SOURCE,
     MARKET_SOURCE,
     agent_calculation_keyboard,
     calculator_result_keyboard,
     choose_agent_custom_calculation,
     choose_agent_cbr_calculation,
     choose_agent_market_calculation,
+    choose_max_invoice_calculation,
     choose_custom_calculation,
     format_agent_assignment_text,
     get_capabilities_hint,
@@ -125,7 +127,9 @@ class FakeCbrService:
             date=rate_date,
             rates={
                 "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+                "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.0000"), Decimal("88.0000"), rate_date),
                 "CNY": CurrencyRate("CNY", "Китайский юань", 1, Decimal("10.9500"), Decimal("10.9500"), rate_date),
+                "AED": CurrencyRate("AED", "Дирхам ОАЭ", 1, Decimal("21.3250"), Decimal("21.3250"), rate_date),
             },
         )
 
@@ -334,6 +338,81 @@ async def test_agent_custom_button_sets_mode_and_shows_hint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_max_invoice_button_sets_mode_and_shows_hint() -> None:
+    user_rate_source.pop(1001, None)
+    message = FakeMessage()
+
+    await choose_max_invoice_calculation(message)
+
+    assert user_rate_source[1001] == MAX_INVOICE_SOURCE
+    assert message.answers[0][0].startswith("💰 Максимальная сумма инвойса")
+    assert "5 000 000 RUB → AED +2,7%" in message.answers[0][0]
+    user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
+async def test_max_invoice_mode_calculates_without_extra_payment() -> None:
+    user_rate_source[1001] = MAX_INVOICE_SOURCE
+    message = FakeMessage("5 000 000 RUB → AED +2,7%")
+    cbr_service = FakeCbrService()
+
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=cbr_service,
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=FakeMarketProvider(),
+        )
+
+        assert cbr_service.fetch_latest_calls == 1
+        text, keyboard = message.answers[0]
+        assert text.startswith("Максимальная сумма инвойса на 05.05.2026")
+        assert "Лимит клиента:\n5 000 000,00 RUB" in text
+        assert "1 AED = 21,3250 RUB" in text
+        assert "2,7% = 2,6% + 0,1%" in text
+        assert "Расчётный курс:\n21,3250 + 2,6% = 21,8795 RUB" in text
+        assert "Максимальная сумма инвойса:\n228 296,12 AED" in text
+        assert "228 296,12 AED × 21,8795 = 4 995 004,96 RUB" in text
+        assert "Итоговая сумма:\n4 999 999,96 RUB" in text
+        assert "Остаток от лимита:\n0,04 RUB" in text
+        assert keyboard is not None
+    finally:
+        user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
+async def test_max_invoice_mode_calculates_with_extra_payment_in_other_currency() -> None:
+    user_rate_source[1001] = MAX_INVOICE_SOURCE
+    message = FakeMessage("500 000 RUB → EUR +2% +215 USD ПП")
+    cbr_service = FakeCbrService()
+
+    try:
+        await convert_currency_handler(
+            message,
+            cbr_service=cbr_service,
+            app_config=Settings(bot_token="123:test", timezone="Europe/Moscow"),
+            market_rate_provider=FakeMarketProvider(),
+        )
+
+        assert cbr_service.fetch_latest_calls == 1
+        text, keyboard = message.answers[0]
+        assert text.startswith("Максимальная сумма инвойса на 05.05.2026")
+        assert "1 EUR = 88,0000 RUB" in text
+        assert "1 USD = 75,0000 RUB" in text
+        assert "2% + 215 USD = 1,9% + 0,1% + 215 USD" in text
+        assert "Кросс-курс с учётом 215 USD:" in text
+        assert "5 387,06 EUR × 88,0000 = 474 061,28 RUB" in text
+        assert "215 USD × 75,0000 = 16 125,00 RUB" in text
+        assert "Расчётный курс:\n90,9933 + 1,9% = 92,7222 RUB" in text
+        assert "Максимальная сумма инвойса:\n5 387,06 EUR" in text
+        assert "Итоговая сумма:\n499 999,55 RUB" in text
+        assert "Остаток от лимита:\n0,45 RUB" in text
+        assert keyboard is not None
+    finally:
+        user_rate_source.pop(1001, None)
+
+
+@pytest.mark.asyncio
 async def test_agent_cbr_mode_calculates_without_agent_word() -> None:
     user_rate_source[1001] = AGENT_CBR_SOURCE
     last_agent_calculations.pop(1001, None)
@@ -430,7 +509,7 @@ async def test_custom_rate_mode_calculates_simple_invoice(custom_input: str) -> 
         text, keyboard = message.answers[0]
         assert cbr_service.fetch_latest_calls == 0
         assert market_provider.requests == []
-        assert text.startswith("Расчёт по своему курсу на 08.07.2026")
+        assert text.startswith("Расчёт по своему курсу на 21.07.2026")
         assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
         assert "Сумма инвойса:\n10 000 USD" in text
         assert "10 000 USD × 76,5000 = 765 000,00 RUB" in text
@@ -459,7 +538,7 @@ async def test_agent_custom_rate_mode_calculates_without_pp(custom_input: str) -
         text, keyboard = message.answers[0]
         assert cbr_service.fetch_latest_calls == 0
         assert market_provider.requests == []
-        assert text.startswith("Агентский расчёт по своему курсу на 08.07.2026")
+        assert text.startswith("Агентский расчёт по своему курсу на 21.07.2026")
         assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
         assert "2,5% = 2,4% + 0,1%" in text
         assert "Расчётный курс:\n76,5000 + 2,4% = 78,3360 RUB" in text
@@ -499,7 +578,7 @@ async def test_agent_custom_rate_mode_calculates_pp_without_double_commission(cu
         text, keyboard = message.answers[0]
         assert cbr_service.fetch_latest_calls == 0
         assert market_provider.requests == []
-        assert text.startswith("Агентский расчёт по своему курсу на 08.07.2026")
+        assert text.startswith("Агентский расчёт по своему курсу на 21.07.2026")
         assert "Собственный курс:\n1 USD = 76,5000 RUB" in text
         assert "2,5% + 100 USD = 2,4% + 0,1% + 100 USD" in text
         assert "Курс для расчёта ПП:\n1 USD = 76,5000 RUB" in text

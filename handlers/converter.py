@@ -18,12 +18,15 @@ from handlers.start import (
     CBR_CALC_BUTTON,
     CUSTOM_CALC_BUTTON,
     INVESTING_CALC_BUTTON,
+    MAX_INVOICE_BUTTON,
     main_menu_keyboard,
 )
 from services.cbr import CBRService, CBRServiceError
 from services.converter import (
     AgentCalculationResult,
+    MaxInvoiceRequest,
     SUPPORTED_CALCULATOR_CURRENCIES,
+    calculate_max_invoice,
     convert_agent_calculation,
     convert_currency as calculate_conversion,
     format_agent_calculation_result,
@@ -31,11 +34,13 @@ from services.converter import (
     format_client_calculation_text,
     format_custom_agent_calculation_result,
     format_custom_calculation_result,
+    format_max_invoice_result,
     is_supported_request,
     looks_like_convert_attempt,
     parse_convert_request,
 )
 from core.money import format_number
+from services.conversion_parser import RUB_CODE, _parse_amount, normalize_currency_token
 from services.ruble_words import amount_to_russian_words
 from services.rates.market import MarketRate, MarketRateProviderError, PairUnavailableError
 
@@ -49,9 +54,19 @@ AGENT_CBR_SOURCE = "AGENT_CBR"
 AGENT_MARKET_SOURCE = "AGENT_MARKET"
 CUSTOM_SOURCE = "CUSTOM"
 AGENT_CUSTOM_SOURCE = "AGENT_CUSTOM"
+MAX_INVOICE_SOURCE = "MAX_INVOICE"
 user_rate_source: dict[int, str] = {}
 last_agent_calculations: dict[int, AgentCalculationResult] = {}
 _CUSTOM_RATE_RE = re.compile(r"^\s*(?P<rate>\d+(?:[.,]\d+)?)\s+(?P<request>.+?)\s*$")
+_MAX_INVOICE_LIMIT_RE = re.compile(
+    r"^\s*(?P<amount>\d{1,3}(?:[ \t_.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?=\s|$|[₽$€£¥])",
+    re.IGNORECASE,
+)
+_MAX_INVOICE_PERCENT_RE = re.compile(r"(?P<sign>[+-])?\s*(?P<value>\d+(?:[.,]\d+)?)\s*%", re.IGNORECASE)
+_MAX_INVOICE_PP_RE = re.compile(
+    r"\+\s*(?P<amount>\d{1,3}(?:[ \t_.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(?P<code>[A-Za-zА-Яа-яЁё]{3})?\s*(?:пп|pp)\b",
+    re.IGNORECASE,
+)
 
 UNKNOWN_CURRENCY_TEXT = (
     "Неизвестная валюта. Сейчас доступны: "
@@ -132,6 +147,24 @@ AGENT_CUSTOM_CALC_PARSE_ERROR_TEXT = (
     "10 000 USD — сумма инвойса\n"
     "+2,5% — ставка клиенту\n"
     "+100ПП — доп. платёж, если нужен"
+)
+MAX_INVOICE_HINT_TEXT = (
+    "💰 Максимальная сумма инвойса\n"
+    "\n"
+    "Введите лимит в RUB, валюту инвойса и ставку клиенту.\n"
+    "\n"
+    "Примеры:\n"
+    "5 000 000 RUB → AED +2,7%\n"
+    "30 000 000 RUB → CNY +1,5%\n"
+    "500 000 RUB → EUR +2% +215 USD ПП"
+)
+MAX_INVOICE_PARSE_ERROR_TEXT = (
+    "Не удалось разобрать расчёт максимальной суммы инвойса.\n"
+    "\n"
+    "Используйте формат:\n"
+    "5 000 000 RUB → AED +2,7%\n"
+    "30 000 000 RUB CNY +1,5%\n"
+    "500 000 RUB → EUR +2% +215 USD ПП"
 )
 
 
@@ -350,6 +383,64 @@ def _parse_custom_rate_request(text: str):
     return custom_rate, request
 
 
+def _extract_currency_codes_from_text(text: str) -> list[str]:
+    codes: list[str] = []
+    for token in re.findall(r"[A-Za-zА-Яа-яЁё₽$€£¥]+", text):
+        code = normalize_currency_token(token)
+        if code is not None:
+            codes.append(code)
+    return codes
+
+
+def _parse_max_invoice_request(text: str) -> MaxInvoiceRequest | None:
+    normalized = text.replace("→", " ").replace("->", " ").replace("=>", " ")
+
+    percent_match = _MAX_INVOICE_PERCENT_RE.search(normalized)
+    if percent_match is None:
+        return None
+    sign = percent_match.group("sign") or "+"
+    try:
+        percent = Decimal(percent_match.group("value").replace(",", "."))
+    except InvalidOperation:
+        return None
+    if sign == "-":
+        percent = -percent
+    normalized = normalized[: percent_match.start()] + " " + normalized[percent_match.end() :]
+
+    extra_payment_amount = None
+    extra_payment_code = None
+    pp_match = _MAX_INVOICE_PP_RE.search(normalized)
+    if pp_match is not None:
+        extra_payment_amount = _parse_amount(pp_match.group("amount"))
+        if extra_payment_amount is None or extra_payment_amount <= 0:
+            return None
+        raw_pp_code = pp_match.group("code")
+        if raw_pp_code:
+            extra_payment_code = normalize_currency_token(raw_pp_code)
+            if extra_payment_code is None or extra_payment_code == RUB_CODE:
+                return None
+        normalized = normalized[: pp_match.start()] + " " + normalized[pp_match.end() :]
+
+    limit_match = _MAX_INVOICE_LIMIT_RE.match(normalized)
+    if limit_match is None:
+        return None
+    limit_rub = _parse_amount(limit_match.group("amount"))
+    if limit_rub is None or limit_rub <= 0:
+        return None
+
+    codes = _extract_currency_codes_from_text(normalized[limit_match.end() :])
+    if len(codes) < 2 or codes[0] != RUB_CODE or codes[1] == RUB_CODE:
+        return None
+
+    return MaxInvoiceRequest(
+        limit_rub=limit_rub,
+        invoice_code=codes[1],
+        percent=percent,
+        extra_payment_amount=extra_payment_amount,
+        extra_payment_code=extra_payment_code,
+    )
+
+
 def _custom_rate_date(app_config: Settings):
     return datetime.now(ZoneInfo(app_config.timezone)).date()
 
@@ -464,6 +555,12 @@ async def choose_agent_custom_calculation(message: Message) -> None:
     await message.answer(AGENT_CUSTOM_CALC_HINT_TEXT)
 
 
+@router.message(F.text == MAX_INVOICE_BUTTON)
+async def choose_max_invoice_calculation(message: Message) -> None:
+    _set_user_source(message, MAX_INVOICE_SOURCE)
+    await message.answer(MAX_INVOICE_HINT_TEXT)
+
+
 @router.callback_query(F.data == "calc:new")
 async def new_calculation(callback: CallbackQuery) -> None:
     await callback.answer()
@@ -496,6 +593,32 @@ async def convert_currency(
         return
 
     active_source = _get_user_source(message)
+    if active_source == MAX_INVOICE_SOURCE:
+        request = _parse_max_invoice_request(message.text)
+        if request is None:
+            await message.answer(MAX_INVOICE_PARSE_ERROR_TEXT)
+            return
+
+        try:
+            snapshot = await cbr_service.get_latest_cbr_rates()
+            logger.info("CBR latest loaded: cbr_date=%s", snapshot.date.isoformat())
+            logger.info("Max invoice calculation uses latest cbr_date=%s", snapshot.date.isoformat())
+        except CBRServiceError:
+            logger.exception("Could not fetch CBR rates for max invoice calculator")
+            await message.answer("Не удалось получить текущий курс ЦБ РФ. Попробуйте чуть позже.")
+            return
+
+        result = calculate_max_invoice(request, snapshot, source=CBR_SOURCE)
+        if result is None:
+            await message.answer(MAX_INVOICE_PARSE_ERROR_TEXT)
+            return
+
+        await message.answer(
+            format_max_invoice_result(result),
+            reply_markup=calculator_result_keyboard(),
+        )
+        return
+
     if active_source in {CUSTOM_SOURCE, AGENT_CUSTOM_SOURCE}:
         parsed_custom = _parse_custom_rate_request(message.text)
         if parsed_custom is None:
