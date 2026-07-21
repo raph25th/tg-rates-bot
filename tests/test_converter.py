@@ -261,6 +261,39 @@ def test_calculate_max_invoice_with_extra_payment_in_other_currency() -> None:
     assert next_total > request.limit_rub
 
 
+def test_calculate_max_invoice_with_pp_handles_non_monotonic_rate_rounding() -> None:
+    rate_date = date(2026, 7, 8)
+    snapshot = RatesSnapshot(
+        date=rate_date,
+        rates={
+            "EUR": CurrencyRate("EUR", "Евро", 1, Decimal("88.0000"), Decimal("88.0000"), rate_date),
+            "USD": CurrencyRate("USD", "Доллар США", 1, Decimal("75.0000"), Decimal("75.0000"), rate_date),
+        },
+    )
+    request = MaxInvoiceRequest(
+        limit_rub=Decimal("914112.55"),
+        invoice_code="EUR",
+        percent=Decimal("2"),
+        extra_payment_amount=Decimal("215"),
+        extra_payment_code="USD",
+    )
+
+    result = calculate_max_invoice(request, snapshot)
+
+    assert result is not None
+    assert result.max_invoice_amount == Decimal("10000.54")
+    assert result.final_result <= request.limit_rub
+
+    next_amount = result.max_invoice_amount + Decimal("0.01")
+    next_invoice_base_rub = next_amount * result.rate.unit_rate
+    next_cross_rate = (next_invoice_base_rub + result.extra_payment_rub) / next_amount
+    next_adjusted_rate = next_cross_rate * (Decimal("1") + result.main_rate_percent / Decimal("100"))
+    next_adjusted_rate = next_adjusted_rate.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    next_main_payment = next_amount * next_adjusted_rate
+    next_total = next_main_payment + next_main_payment * result.agent_fee_percent / Decimal("100")
+    assert next_total > request.limit_rub
+
+
 def test_convert_rub_to_currency() -> None:
     request = parse_convert_request("56 548 468 рублей в usd")
     assert request is not None

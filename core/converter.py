@@ -337,29 +337,51 @@ def calculate_max_invoice(
     no_pp_rate = round_rate_for_calculation(apply_percent(invoice_rate.unit_rate, main_rate_percent))
     if no_pp_rate <= 0:
         return None
-    no_pp_unit_total = no_pp_rate * (Decimal("1") + request.agent_fee_percent / Decimal("100"))
+    agent_factor = Decimal("1") + request.agent_fee_percent / Decimal("100")
+    no_pp_unit_total = no_pp_rate * agent_factor
     high_cents = int((request.limit_rub / no_pp_unit_total * Decimal("100")).to_integral_value(rounding=ROUND_FLOOR))
     if high_cents <= 0:
         return None
 
-    best_cents = 0
-    low_cents = 1
-    while low_cents <= high_cents:
-        mid_cents = (low_cents + high_cents) // 2
-        amount = Decimal(mid_cents) / Decimal("100")
-        main_payment_rub, _, _, _ = _max_invoice_main_payment(
-            amount,
-            invoice_rate,
-            extra_payment_rate,
-            extra_payment_amount,
-            main_rate_percent,
+    if extra_payment_amount is None or extra_payment_rate is None:
+        best_cents = high_cents
+    else:
+        working_factor = Decimal("1") + main_rate_percent / Decimal("100")
+        base_rate_exact = invoice_rate.unit_rate * working_factor
+        fixed_payment_exact = extra_payment_rub * working_factor
+        available_before_fee = request.limit_rub / agent_factor - fixed_payment_exact
+        minimum_effective_rate = base_rate_exact - RATE_QUANT / Decimal("2")
+        if available_before_fee <= 0 or minimum_effective_rate <= 0:
+            return None
+
+        # Rounding makes the total locally non-monotonic. This bound follows from
+        # rounded_rate >= exact_rate - 0.00005 and cannot exclude a valid amount.
+        best_cents = int(
+            (available_before_fee / minimum_effective_rate * Decimal("100")).to_integral_value(
+                rounding=ROUND_FLOOR
+            )
         )
-        _, final_result = _agent_total_from_main_payment(main_payment_rub, request.agent_fee_percent)
-        if final_result <= request.limit_rub:
-            best_cents = mid_cents
-            low_cents = mid_cents + 1
-        else:
-            high_cents = mid_cents - 1
+        best_cents = min(best_cents, high_cents)
+
+        while best_cents > 0:
+            amount = Decimal(best_cents) / Decimal("100")
+            main_payment_rub, _, _, adjusted_rate = _max_invoice_main_payment(
+                amount,
+                invoice_rate,
+                extra_payment_rate,
+                extra_payment_amount,
+                main_rate_percent,
+            )
+            _, final_result = _agent_total_from_main_payment(main_payment_rub, request.agent_fee_percent)
+            if final_result <= request.limit_rub:
+                break
+
+            affordable_cents = int(
+                (request.limit_rub / (adjusted_rate * agent_factor) * Decimal("100")).to_integral_value(
+                    rounding=ROUND_FLOOR
+                )
+            )
+            best_cents = min(best_cents - 1, affordable_cents)
 
     if best_cents <= 0:
         return None

@@ -1,6 +1,6 @@
 import logging
 
-from aiogram import F, Router
+from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
@@ -75,15 +75,4 @@ async def start_handler(message: Message, repo: UserRepository | None = None) ->
         "\n"
         "Выберите действие 👇",
         reply_markup=main_menu_keyboard(),
-    )
-
-
-@router.message(F.text == CBR_CALC_BUTTON)
-async def cbr_converter_hint(message: Message) -> None:
-    await message.answer(
-        "🧮 Расчёт по ЦБ РФ\n\n"
-        "Напишите сумму и валюту:\n\n"
-        "100 usd\n"
-        "10 000 eur +2%\n"
-        "1 000 000 rub в usd"
     )

@@ -13,6 +13,7 @@ from handlers.converter import (
     AGENT_MARKET_SOURCE,
     AGENT_RATE_TOO_LOW_TEXT,
     AGENT_REVERSE_UNSUPPORTED_TEXT,
+    CBR_SOURCE,
     CUSTOM_SOURCE,
     INVESTING_CALC_UNAVAILABLE_TEXT,
     MAX_INVOICE_SOURCE,
@@ -22,6 +23,7 @@ from handlers.converter import (
     choose_agent_custom_calculation,
     choose_agent_cbr_calculation,
     choose_agent_market_calculation,
+    choose_cbr_calculation,
     choose_max_invoice_calculation,
     choose_custom_calculation,
     format_agent_assignment_text,
@@ -114,6 +116,20 @@ def test_investing_calculation_unavailable_message() -> None:
     assert "💱 Расчёт по рынку" in INVESTING_CALC_UNAVAILABLE_TEXT
     assert "Рыночные курсы временно недоступны." in INVESTING_CALC_UNAVAILABLE_TEXT
     assert "100 usd" in INVESTING_CALC_UNAVAILABLE_TEXT
+
+
+@pytest.mark.asyncio
+async def test_choose_cbr_calculation_resets_previous_agent_source() -> None:
+    message = FakeMessage()
+    user_rate_source[1001] = AGENT_CBR_SOURCE
+
+    try:
+        await choose_cbr_calculation(message)
+
+        assert user_rate_source[1001] == CBR_SOURCE
+        assert "Расчёт по ЦБ РФ" in message.answers[0][0]
+    finally:
+        user_rate_source.pop(1001, None)
 
 
 class FakeCbrService:
